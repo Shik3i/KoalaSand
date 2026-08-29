@@ -1,0 +1,27 @@
+# Roadmap
+
+- Phase 0 — Foundation: chunk storage, definitions, deterministic utilities, fixed clock, debug renderer, tests, scalability probe.
+- Phase 1 — Deterministic granular simulation: complete; Raw Sand movement, active/sleeping scheduling, boundary wake-up, visual foundation, tools, golden tests, and benchmarks.
+- Phase 1.5 — Performance architecture gate: complete; native `64×64` production core, active/render bounds, persistent render workers, oracle parity, 60 Hz target, 1080p telemetry, and regression matrix.
+- Phase 2 — Procedural geology / world generation: complete; finite deterministic terrain, async chunk streaming, static water/coal deposits, Raw Sand provenance, pristine eviction, tooling, golden tests, and performance gates.
+- Phase 3 — Structures and physical logistics: complete; separate occupancy, batched construction/rendering, deterministic Conveyors, stepped Funnels, physical Storage Bin, inert Furnace shell, ports, streaming protection, tests, benchmarks, and captures.
+- Phase 4 — Material-processing foundation: complete and superseded where necessary by Phase 6.5 physicality rules.
+- Phase 5 — Research and Bank: complete; physical one-way deposits, reject blockage, global `int64` balances, nine-node branching tree, native unlock enforcement, global upgrades, serialization boundary, UI, pacing tests, benchmarks, and captures.
+- Phase 6 — Sensors and automation: complete; native integer graph, event-driven sensors/logic, Timer/Latch, physical actuators, Wiring Mode, scalable research UI, tests, benchmarks, and captures.
+- Phase 6.5 — Physicality / UX / platform foundation: complete; physical Screen, Overbelt Magnet and Radiant Furnace, commercial HUD/Quickbars/Catalog, overlays, commands, modes, portable core, Web/co-op architecture, regression/visual/performance gates.
+- Phase 6.75 — Pre-fluid performance architecture gate: complete; thermal encoding audited/migrated, competing isolated liquid kernels benchmarked, fixed-mass/frontier architecture selected, deterministic worker scaling proven, render path measured, no production Water movement.
+- Phase 7 — complete: Dynamic Water and unified deterministic parallel matter scheduling.
+- Phase 8 — complete: spatial Pipes, finite-head Pumps, local Intakes/Outlets/Valves, local damage and real leaks, physical Reservoirs, fluid automation/research, Wash Sluice, settling basin and Water recycling.
+- Phase 8.5 — complete: dense page renderer, visibility/dirty-state/LOD gate, GPU temperature page, isolated deterministic thermal architecture candidate, worker/cadence/memory evidence; no production thermal behavior.
+- Phase 8.75 — complete: canonical CommandBatch/Undo/Blueprint construction foundation, Pipette/planners, three finite physical Subsurface Channels, generic permeability/field/linked-transport contracts, Info/Statistics/Alerts, expanded overlays, Quickbars and Overview LOD.
+- Phase 9 — complete: production thermodynamics, conserved enthalpy/latent heat, Ice/Water/Steam, generic gas motion, molten Glass/Iron, world/Pipe heat exchange, Steam pressure/leaks, thermal structures, sensing, Research, rendering and full regression gates.
+- Phase 9.5 — complete: 1M Steam and 50k Steam-Pipe latency gates, persistent exact Pipe scheduling, visible material-page batching, Power/Turbine/mechanical/electrical architecture and stable IDs.
+- Phase 10 — complete: physical Steam Turbines and exhaust, cached mechanical Shafts/Flywheels, shaft-driven Generators, cached Power-Pole grids, deterministic priorities/brownouts, Switches, Accumulators, electric upgrades, Power automation/overlay, tests, benchmarks and captures. Transformer intentionally deferred pending real voltage/domain isolation.
+- Phase 11 — complete: composed Factory/Character/Creative modes, stable WorldIdentity and native WorldGen V2, 10k-seed validator/corrections, InterestRegion streaming, fixed-tick Character/Basic Jetpack, physical Dig, Sprint/Hover, owner FOV/discovery/map memory, New Game preview, tests, benchmarks and captures.
+- Phase 11.5 — complete: correction audit/severity reporting, responsive Character/Jetpack/Sprint/precision Hover/camera, corner-safe discovery and last-known Map, coherent themed HUD/modals/New Game, contextual Inspector/onboarding, mode/accessibility/input polish, measured fresh-session pacing, Steam regression fix, performance matrix and captures.
+- Phase 12 — complete: deterministic WorldGen Trees/mushrooms, fixed-point fellable clusters, physical Wood/Leaves/moisture, implicit ambient oxidizer, sparse reaction state, real Fire/Smoke/Ash, oxygen-limited Charcoal, physical Furnace fuel, Iron Pot conduction/boiling, temperature-time Food states, tools/UI/statistics, tests, benchmarks and captures.
+- Phase 13 — complete: exact six-constituent fixed-point conservation, generic fractional ledger, component-built processing/Blueprints, optimized atmosphere/combustion, production Save/Load, shared MVP progression, milestones, session flow and scope freeze.
+- Phase 13.5 — complete: playtest release candidate, procedural audio, feedback, packaging and recovery audit.
+- Phase 13.6 — complete: visual identity, UI/UX and game-feel polish with curated final captures.
+- Phase 13.7 — current completion gate: repository cleanup, initial Git baseline, engineering hardening, canonical tooling and full verification. No gameplay scope expansion.
+- Later / post-MVP — Advanced chemistry/clay forming, farming/survival/combat, Nuclear, Web export and online co-op/spectators. Phase 14 has not begun.

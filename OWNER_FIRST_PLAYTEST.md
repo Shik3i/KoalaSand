@@ -1,0 +1,41 @@
+# Owner First Playtest — 0.1.0-playtest.2
+
+Play normally first. Record mode, seed, resolution and anything that makes you stop to decode the interface.
+
+## First 15 minutes
+
+- Was the immediate goal understandable?
+- Did movement/camera feel good?
+- Could you find basic Components?
+- What still looked prototype-like?
+
+## Building
+
+- Was orientation clear before placement?
+- Did physical Components make sense together?
+- Was Planning Pause useful?
+- When a design failed, was the physical cause clear?
+
+## Discovery
+
+- Did Inspector answer the immediate question?
+- Did Codex help without overwhelming you?
+- Did you know what to try next?
+
+## Game feel
+
+- Which sounds became annoying?
+- Which actions lacked weight or feedback?
+- Did Water, Steam, Fire, Trees and machines feel alive?
+- Did UI obstruct the world?
+
+## Character
+
+- Jetpack and Hover readable?
+- Build range understandable?
+- Unknown/stale/live vision coherent?
+
+## Performance and bugs
+
+- Any hitch, FPS drop or save pause?
+- If something breaks: Pause → Export local diagnostics. Add exact steps, expected result, actual result and a screenshot if useful.

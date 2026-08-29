@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="MaterialDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/materials/material_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+stable_id = 11
+key = &"iron"
+display_name = "Iron"
+category = 2
+density_kg_m3 = 1800.0
+thermal_conductivity = 192
+specific_heat_units = 56
+boil_or_melt_threshold = 7245
+phase_family = &"iron"
+melt_to = &"molten_iron"
+latent_heat_high = 16000
+debug_color = Color(0.31, 0.35, 0.37, 1)
+tags = Array[StringName]([&"product", &"granular"])
+visual_palette = PackedColorArray(0.31, 0.35, 0.37, 1)
+visual_surface_color = Color(0.31, 0.35, 0.37, 1)
+visual_shadow_color = Color(0.31, 0.35, 0.37, 1)
+visual_flags = 7
+visual_noise_scale = 5
+visual_depth_tint = 0.12
+visual_emission_color = Color(0, 0, 0, 0)

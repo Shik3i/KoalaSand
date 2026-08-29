@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="MaterialDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/materials/material_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+stable_id = 0
+key = &"empty"
+display_name = "Empty"
+category = 0
+density_kg_m3 = 0.0
+debug_color = Color(0, 0, 0, 0)
+tags = Array[StringName]([])
+visual_palette = PackedColorArray(0, 0, 0, 0)
+visual_surface_color = Color(0, 0, 0, 0)
+visual_shadow_color = Color(0, 0, 0, 0)
+visual_flags = 0
+visual_noise_scale = 7
+visual_depth_tint = 0.0
+visual_emission_color = Color(0, 0, 0, 0)

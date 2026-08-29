@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="MaterialDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/materials/material_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+stable_id = 24
+key = &"smoke"
+display_name = "Smoke"
+category = 4
+density_kg_m3 = 2.0
+thermal_conductivity = 8
+specific_heat_units = 24
+thermal_mass_uses_cell_mass = true
+mobility = 220
+debug_color = Color(0.28,0.29,0.30,0.56)
+tags = Array[StringName]([&"gas", &"combustion_product"])
+visual_palette = PackedColorArray(0.22,0.23,0.24,0.58, 0.32,0.33,0.34,0.52, 0.14,0.15,0.16,0.64, 0.42,0.40,0.38,0.46)
+visual_surface_color = Color(0.48,0.47,0.45,0.50)
+visual_shadow_color = Color(0.08,0.09,0.10,0.66)
+visual_flags = 7
+visual_noise_scale = 12
+visual_depth_tint = 0.08

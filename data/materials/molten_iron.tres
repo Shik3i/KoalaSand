@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="MaterialDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/materials/material_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+stable_id = 19
+key = &"molten_iron"
+display_name = "Molten Iron"
+category = 5
+density_kg_m3 = 7000.0
+thermal_conductivity = 160
+specific_heat_units = 64
+freeze_threshold = 7245
+thermal_mass_uses_cell_mass = true
+phase_family = &"iron"
+freeze_to = &"iron"
+latent_heat_low = 16000
+mobility = 12
+debug_color = Color(1, 0.26, 0.02, 1)
+tags = Array[StringName]([&"liquid", &"molten", &"phase_material"])
+visual_palette = PackedColorArray(1, 0.24, 0.015, 1, 1, 0.58, 0.05, 1, 0.72, 0.055, 0.01, 1, 1, 0.86, 0.27, 1)
+visual_surface_color = Color(1, 0.9, 0.34, 1)
+visual_shadow_color = Color(0.5, 0.018, 0.002, 1)
+visual_flags = 15
+visual_noise_scale = 5
+visual_depth_tint = 0.12
+visual_emission_color = Color(1, 0.16, 0.005, 1)

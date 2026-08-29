@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "platform_measured": "windows-x86_64-godot-4.7.1",
+  "cross_platform_verified": false,
+  "hashes": {
+    "granular_single_falling_column": "18a0bbfc",
+    "granular_small_sand_pile": "1471d40f",
+    "granular_narrow_funnel": "23dc3106",
+    "granular_split_over_obstacle": "45a4677e",
+    "granular_cross_chunk_pile": "20c81915",
+    "physical_processing_phase65": "54b5af9a",
+    "world_command_replay": "covered-by-phase65-correctness",
+    "automation": "covered-by-phase6-correctness",
+    "world_generation": "covered-by-phase2-correctness"
+  }
+}

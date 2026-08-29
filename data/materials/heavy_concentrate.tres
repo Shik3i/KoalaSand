@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="MaterialDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/materials/material_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+stable_id = 7
+key = &"heavy_concentrate"
+display_name = "Heavy Concentrate"
+category = 2
+density_kg_m3 = 1800.0
+debug_color = Color(0.31, 0.28, 0.25, 1)
+tags = Array[StringName]([&"processed", &"concentrate"])
+visual_palette = PackedColorArray(0.31, 0.28, 0.25, 1)
+visual_surface_color = Color(0.31, 0.28, 0.25, 1)
+visual_shadow_color = Color(0.31, 0.28, 0.25, 1)
+visual_flags = 7
+visual_noise_scale = 5
+visual_depth_tint = 0.12
+visual_emission_color = Color(0, 0, 0, 0)

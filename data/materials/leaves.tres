@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="MaterialDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/materials/material_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+stable_id = 22
+key = &"leaves"
+display_name = "Leaves"
+category = 1
+density_kg_m3 = 180.0
+thermal_conductivity = 10
+specific_heat_units = 36
+thermal_mass_uses_cell_mass = true
+flammability = 255
+ignition_temperature = 1760
+pyrolysis_temperature = 1680
+combustion_heat = 5200
+moisture_capacity = 48
+char_yield = 16
+ash_yield = 48
+smoke_yield = 207
+burn_rate = 8
+debug_color = Color(0.19,0.45,0.13,1)
+tags = Array[StringName]([&"solid", &"organic", &"flammable", &"vegetation"])
+visual_palette = PackedColorArray(0.12,0.34,0.10,1, 0.19,0.45,0.13,1, 0.08,0.26,0.07,1, 0.31,0.53,0.17,1)
+visual_surface_color = Color(0.38,0.64,0.22,1)
+visual_shadow_color = Color(0.04,0.14,0.035,1)
+visual_flags = 7
+visual_noise_scale = 5
+visual_depth_tint = 0.10

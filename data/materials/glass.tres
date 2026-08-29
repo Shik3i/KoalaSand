@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="MaterialDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/materials/material_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+stable_id = 10
+key = &"glass"
+display_name = "Glass"
+category = 2
+density_kg_m3 = 1800.0
+thermal_conductivity = 24
+specific_heat_units = 40
+boil_or_melt_threshold = 5873
+phase_family = &"glass"
+melt_to = &"molten_glass"
+latent_heat_high = 20000
+debug_color = Color(0.71, 0.86, 0.86, 1)
+tags = Array[StringName]([&"product", &"granular"])
+visual_palette = PackedColorArray(0.71, 0.86, 0.86, 1)
+visual_surface_color = Color(0.71, 0.86, 0.86, 1)
+visual_shadow_color = Color(0.71, 0.86, 0.86, 1)
+visual_flags = 7
+visual_noise_scale = 5
+visual_depth_tint = 0.12
+visual_emission_color = Color(0, 0, 0, 0)

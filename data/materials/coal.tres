@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="MaterialDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/materials/material_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+stable_id = 4
+key = &"coal"
+display_name = "Coal"
+category = 1
+density_kg_m3 = 1350.0
+debug_color = Color(0.07, 0.08, 0.09, 1)
+tags = Array[StringName]([&"terrain", &"resource"])
+visual_palette = PackedColorArray(0.055, 0.065, 0.075, 1, 0.075, 0.085, 0.095, 1, 0.04, 0.047, 0.055, 1, 0.105, 0.11, 0.115, 1)
+visual_surface_color = Color(0.18, 0.19, 0.2, 1)
+visual_shadow_color = Color(0.018, 0.022, 0.028, 1)
+visual_flags = 7
+visual_noise_scale = 6
+visual_depth_tint = 0.1
+visual_emission_color = Color(0, 0, 0, 0)

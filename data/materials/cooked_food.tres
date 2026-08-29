@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="MaterialDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/materials/material_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+stable_id = 26
+key = &"cooked_food"
+display_name = "Cooked Mushroom"
+category = 2
+density_kg_m3 = 610.0
+thermal_conductivity = 20
+specific_heat_units = 78
+thermal_mass_uses_cell_mass = true
+flammability = 70
+ignition_temperature = 1972
+combustion_heat = 1800
+moisture_capacity = 48
+ash_yield = 40
+smoke_yield = 215
+burn_rate = 2
+debug_color = Color(0.82,0.56,0.24,1)
+tags = Array[StringName]([&"granular", &"organic", &"food", &"reactive", &"transportable"])
+visual_palette = PackedColorArray(0.70,0.43,0.18,1, 0.82,0.56,0.24,1, 0.56,0.31,0.12,1, 0.91,0.68,0.34,1)
+visual_surface_color = Color(0.96,0.76,0.43,1)
+visual_shadow_color = Color(0.30,0.14,0.05,1)
+visual_flags = 7
+visual_noise_scale = 4
+visual_depth_tint = 0.08

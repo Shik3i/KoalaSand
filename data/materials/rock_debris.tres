@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="MaterialDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/materials/material_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+stable_id = 20
+key = &"rock_debris"
+display_name = "Rock Debris"
+category = 2
+density_kg_m3 = 2100.0
+thermal_conductivity = 52
+specific_heat_units = 54
+mobility = 190
+debug_color = Color(0.34, 0.38, 0.4, 1)
+tags = Array[StringName]([&"granular", &"excavation_output", &"physical"])
+visual_palette = PackedColorArray(0.3, 0.34, 0.37, 1, 0.38, 0.41, 0.43, 1, 0.24, 0.28, 0.31, 1, 0.45, 0.43, 0.39, 1)
+visual_surface_color = Color(0.57, 0.59, 0.58, 1)
+visual_shadow_color = Color(0.12, 0.15, 0.18, 1)
+visual_flags = 7
+visual_noise_scale = 6
+visual_depth_tint = 0.14
+visual_emission_color = Color(0, 0, 0, 0)

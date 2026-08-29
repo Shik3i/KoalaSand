@@ -1,0 +1,87 @@
+; Engine configuration file.
+; Edit through the Godot editor when possible.
+
+config_version=5
+
+[application]
+
+config/name="KoalaSand"
+config/version="0.1.0-playtest.2"
+run/main_scene="res://scenes/debug_world.tscn"
+config/auto_accept_quit=false
+
+[display]
+
+window/size/viewport_width=1152
+window/size/viewport_height=648
+window/size/window_width_override=1152
+window/size/window_height_override=648
+window/stretch/mode="canvas_items"
+window/vsync/vsync_mode=0
+
+[input]
+
+move_left={"deadzone": 0.2, "events": [Object(InputEventKey,"physical_keycode":65)]}
+move_right={"deadzone": 0.2, "events": [Object(InputEventKey,"physical_keycode":68)]}
+jump={"deadzone": 0.2, "events": [Object(InputEventKey,"physical_keycode":32)]}
+jetpack={"deadzone": 0.2, "events": [Object(InputEventKey,"physical_keycode":87)]}
+sprint={"deadzone": 0.2, "events": [Object(InputEventKey,"physical_keycode":4194325)]}
+hover={"deadzone": 0.2, "events": [Object(InputEventKey,"physical_keycode":67)]}
+interact={"deadzone": 0.2, "events": [Object(InputEventKey,"physical_keycode":70)]}
+dig={"deadzone": 0.2, "events": [Object(InputEventMouseButton,"button_index":1)]}
+character_cut={"deadzone": 0.2, "events": [Object(InputEventKey,"physical_keycode":88)]}
+ignite={"deadzone": 0.2, "events": [Object(InputEventKey,"physical_keycode":69)]}
+center_camera={"deadzone": 0.2, "events": [Object(InputEventKey,"physical_keycode":71)]}
+map={"deadzone": 0.2, "events": [Object(InputEventKey,"physical_keycode":77)]}
+cancel={"deadzone": 0.2, "events": [Object(InputEventKey,"physical_keycode":4194305)]}
+planning_pause={"deadzone": 0.2, "events": [Object(InputEventKey,"physical_keycode":32,"shift_pressed":true)]}
+open_codex={"deadzone": 0.2, "events": [Object(InputEventKey,"physical_keycode":75)]}
+open_experiments={"deadzone": 0.2, "events": [Object(InputEventKey,"physical_keycode":74)]}
+
+build_catalog={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":66)]
+}
+toggle_wiring={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":89)]
+}
+open_research={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":84)]
+}
+overlay_selector={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":79)]
+}
+copy={"deadzone": 0.5, "events": [Object(InputEventKey,"ctrl_pressed":true,"physical_keycode":67)]}
+cut={"deadzone": 0.5, "events": [Object(InputEventKey,"ctrl_pressed":true,"physical_keycode":88)]}
+paste={"deadzone": 0.5, "events": [Object(InputEventKey,"ctrl_pressed":true,"physical_keycode":86)]}
+undo={"deadzone": 0.5, "events": [Object(InputEventKey,"ctrl_pressed":true,"physical_keycode":90)]}
+redo={"deadzone": 0.5, "events": [Object(InputEventKey,"ctrl_pressed":true,"physical_keycode":89)]}
+pipette={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":81)]}
+rotate={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":82)]}
+flip_horizontal={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":70)]}
+flip_vertical={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":86)]}
+info_mode={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":73)]}
+statistics={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":80)]}
+blueprint={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":85)]}
+quickbar_1={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":49)]}
+quickbar_2={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":50)]}
+quickbar_3={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":51)]}
+quickbar_4={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":52)]}
+quickbar_5={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":53)]}
+quickbar_6={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":54)]}
+quickbar_7={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":55)]}
+quickbar_8={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":56)]}
+quickbar_9={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":57)]}
+quickbar_0={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":48)]}
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/default_filters/use_nearest_mipmap_filter=false
+environment/defaults/default_clear_color=Color(0.025, 0.03, 0.04, 1)
+2d/snap/snap_2d_transforms_to_pixel=true
+2d/snap/snap_2d_vertices_to_pixel=true

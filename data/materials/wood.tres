@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="MaterialDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/materials/material_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+stable_id = 21
+key = &"wood"
+display_name = "Wood"
+category = 1
+density_kg_m3 = 700.0
+thermal_conductivity = 18
+specific_heat_units = 72
+thermal_mass_uses_cell_mass = true
+flammability = 190
+ignition_temperature = 2092
+pyrolysis_temperature = 1892
+combustion_heat = 12000
+moisture_capacity = 96
+char_yield = 96
+ash_yield = 16
+smoke_yield = 159
+burn_rate = 4
+debug_color = Color(0.43, 0.23, 0.09, 1)
+tags = Array[StringName]([&"solid", &"organic", &"flammable", &"pyrolysable", &"transportable"])
+visual_palette = PackedColorArray(0.34,0.17,0.07,1, 0.43,0.23,0.09,1, 0.27,0.12,0.05,1, 0.53,0.31,0.12,1)
+visual_surface_color = Color(0.63,0.39,0.16,1)
+visual_shadow_color = Color(0.14,0.06,0.025,1)
+visual_flags = 7
+visual_noise_scale = 6
+visual_depth_tint = 0.12

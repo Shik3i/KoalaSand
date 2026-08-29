@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="MaterialDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/materials/material_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+stable_id = 18
+key = &"molten_glass"
+display_name = "Molten Glass"
+category = 5
+density_kg_m3 = 2350.0
+thermal_conductivity = 28
+specific_heat_units = 48
+freeze_threshold = 5873
+thermal_mass_uses_cell_mass = true
+phase_family = &"glass"
+freeze_to = &"glass"
+latent_heat_low = 20000
+mobility = 4
+debug_color = Color(1, 0.45, 0.06, 1)
+tags = Array[StringName]([&"liquid", &"molten", &"phase_material"])
+visual_palette = PackedColorArray(1, 0.43, 0.06, 1, 1, 0.72, 0.14, 1, 0.86, 0.16, 0.025, 1, 1, 0.91, 0.38, 1)
+visual_surface_color = Color(1, 0.92, 0.45, 1)
+visual_shadow_color = Color(0.54, 0.03, 0.005, 1)
+visual_flags = 15
+visual_noise_scale = 7
+visual_depth_tint = 0.14
+visual_emission_color = Color(1, 0.28, 0.015, 1)

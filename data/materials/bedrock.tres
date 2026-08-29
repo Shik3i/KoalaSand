@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="MaterialDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/materials/material_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+stable_id = 5
+key = &"bedrock"
+display_name = "Bedrock"
+category = 1
+density_kg_m3 = 4200.0
+debug_color = Color(0.11, 0.08, 0.12, 1)
+tags = Array[StringName]([&"terrain", &"boundary"])
+visual_palette = PackedColorArray(0.095, 0.075, 0.105, 1, 0.125, 0.095, 0.13, 1, 0.07, 0.06, 0.08, 1, 0.15, 0.115, 0.145, 1)
+visual_surface_color = Color(0.25, 0.18, 0.26, 1)
+visual_shadow_color = Color(0.045, 0.035, 0.055, 1)
+visual_flags = 7
+visual_noise_scale = 9
+visual_depth_tint = 0.18
+visual_emission_color = Color(0, 0, 0, 0)

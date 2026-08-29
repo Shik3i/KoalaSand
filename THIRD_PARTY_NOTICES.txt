@@ -1,0 +1,24 @@
+KOALASAND THIRD-PARTY NOTICES — 0.1.0-playtest.2
+
+Godot Engine
+Copyright (c) 2014-present Godot Engine contributors.
+Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.
+Licensed under the MIT License. The official Godot license is distributed with
+the engine runtime. The complete text is included as GODOT_LICENSE.txt.
+
+godot-cpp
+Copyright (c) 2015-present Godot Engine contributors.
+Licensed under the MIT License. The pinned source dependency is used to build
+the KoalaSand GDExtension. The complete text is included as
+GODOT_CPP_LICENSE.txt.
+
+Audio
+All redistributed KoalaSand sound effects in this build are generated at runtime
+from original deterministic procedural waveforms implemented in
+core/audio/procedural_sfx.gd. No external audio assets are redistributed.
+No copyrighted commercial-game audio is used.
+
+Game source/assets
+All tracked KoalaSand screenshots are direct captures of original project
+rendering. No external fonts, icons, commercial game art, music or sound are
+redistributed.

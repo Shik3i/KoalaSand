@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="MaterialDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/materials/material_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+stable_id = 16
+key = &"ice"
+display_name = "Ice"
+category = 1
+density_kg_m3 = 917.0
+thermal_conductivity = 80
+specific_heat_units = 64
+boil_or_melt_threshold = 1092
+thermal_mass_uses_cell_mass = true
+phase_family = &"water"
+melt_to = &"water"
+latent_heat_high = 12000
+debug_color = Color(0.68, 0.9, 0.97, 1)
+tags = Array[StringName]([&"solid", &"phase_material"])
+visual_palette = PackedColorArray(0.66, 0.88, 0.96, 1, 0.8, 0.95, 1, 1, 0.48, 0.74, 0.88, 1, 0.91, 0.98, 1, 1)
+visual_surface_color = Color(0.9, 0.98, 1, 1)
+visual_shadow_color = Color(0.28, 0.52, 0.7, 1)
+visual_flags = 7
+visual_noise_scale = 9
+visual_depth_tint = 0.1

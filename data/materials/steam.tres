@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="MaterialDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/materials/material_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+stable_id = 17
+key = &"steam"
+display_name = "Steam"
+category = 4
+density_kg_m3 = 1.0
+thermal_conductivity = 20
+specific_heat_units = 32
+freeze_threshold = 1492
+thermal_mass_uses_cell_mass = true
+phase_family = &"water"
+condense_to = &"water"
+latent_heat_low = 42000
+mobility = 255
+pipe_compatible = true
+debug_color = Color(0.82, 0.88, 0.9, 0.56)
+tags = Array[StringName]([&"gas", &"phase_material"])
+visual_palette = PackedColorArray(0.76, 0.82, 0.84, 0.56, 0.9, 0.94, 0.95, 0.62, 0.62, 0.69, 0.73, 0.48, 1, 1, 1, 0.67)
+visual_surface_color = Color(0.96, 0.98, 1, 0.7)
+visual_shadow_color = Color(0.4, 0.48, 0.54, 0.4)
+visual_flags = 3
+visual_noise_scale = 14
+visual_depth_tint = 0.08
