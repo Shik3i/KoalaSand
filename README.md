@@ -2,7 +2,7 @@
 
 A physics-first falling-sand factory game where materials flow, separate, heat, burn, boil, leak and power machinery in one deterministic world.
 
-![KoalaSand character factory](docs/assets/screenshots/character-factory.png)
+![KoalaSand Character Mode](docs/assets/screenshots/character-factory.png)
 
 ## What is KoalaSand?
 
@@ -38,7 +38,7 @@ Example loop:
 
 ## Status
 
-Current build: **0.1.0-playtest.4**. Early owner playtest; not a finished public release. Phase 13.9 completes first-time-player guidance and complete UX coverage without beginning Phase 14.
+Current build: **0.1.0-playtest.5**. Early owner playtest; not a finished public release. Phase 13.9B rebuilds the responsive player UI and first-time-player layout without beginning Phase 14.
 
 See [STATUS.md](STATUS.md), [MVP_SCOPE.md](MVP_SCOPE.md), [KNOWN_ISSUES.md](KNOWN_ISSUES.md) and [ROADMAP.md](ROADMAP.md).
 

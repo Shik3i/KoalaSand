@@ -139,6 +139,8 @@ var _phase13_view := ""
 var _phase135_view := ""
 var _phase136_view := ""
 var _phase139_view := ""
+var _phase139b_ui_scale := 1.0
+var _phase139b_long_fixture := false
 var _realistic_max_factory_benchmark := false
 var _owner_package_smoke := false
 var _validate_seeds := 0
@@ -245,6 +247,8 @@ func _ready() -> void:
 	_create_phase135_player_ui()
 	_create_pause_menu()
 	factory_hud.bind_help_root($HUD)
+	get_window().size_changed.connect(_layout_workspace_panels)
+	call_deferred("_layout_workspace_panels")
 	research_tree.initialize(world)
 	research_tree.theme = factory_hud.theme
 	if _phase6_view == "research":
@@ -1336,6 +1340,7 @@ func _select_structure(type_id: int) -> void:
 
 
 func _toggle_research() -> void:
+	if not research_tree.visible: _close_workspace_panels("research")
 	research_tree.toggle()
 	factory_hud.set_external_modal("research", research_tree.visible)
 	_update_status()
@@ -1354,8 +1359,11 @@ func _toggle_world_map() -> void:
 		factory_hud.bind_help_root(_world_map_panel)
 		_world_map_panel.visible = false
 		_world_map_panel.closed.connect(func() -> void: factory_hud.set_external_modal("map", false))
+		_layout_workspace_panels()
 	if _world_map_panel.visible: _world_map_panel.close()
-	else: _world_map_panel.open()
+	else:
+		_close_workspace_panels("map")
+		_world_map_panel.open()
 	factory_hud.set_external_modal("map", _world_map_panel.visible)
 	if _world_map_panel.visible:
 		_world_map_panel.refresh(_expanded_chunk_rect(_visible_chunk_rect, 1))
@@ -1839,6 +1847,13 @@ func _configure_phase139_capture_source() -> void:
 		"inspector-first-use":"inspector-screen", "inspector-blocker":"inspector-screen", "planning-pause-hint":"planning-pause",
 		"current-goal":"current-goal", "goal-help":"current-goal", "experiments":"experiments", "codex-help":"codex-component", "controls-help":"full-game-factory",
 		"tooltip-1600x900":"build-catalog", "tooltip-2560x1440":"build-catalog",
+		"factory-clean":"full-game-factory", "character-clean":"full-game-character", "creative-clean":"creative",
+		"bottom-hud":"full-game-factory", "top-hud":"full-game-factory", "catalog-100":"build-catalog", "catalog-125":"build-catalog", "catalog-150":"build-catalog",
+		"catalog-1600x900":"build-catalog", "catalog-2560x1440":"build-catalog", "catalog-tooltip":"build-catalog", "tooltip-bottom-edge":"build-catalog", "tooltip-right-edge":"current-goal",
+		"quickbar-full":"full-game-factory", "action-tools":"full-game-factory", "research":"research", "research-150":"research", "codex":"codex-component",
+		"inspector":"inspector-sluice", "blueprints":"blueprints", "map":"map-factory", "stats":"full-game-factory",
+		"first-build-highlight":"factory-start", "first-research-highlight":"factory-start", "first-inspector-highlight":"factory-start",
+		"save-browser":"save-browser", "settings":"settings", "pause":"pause-menu",
 	}.get(_phase139_view, "full-game-factory"))
 	_phase136_view = source
 	_configure_phase136_capture_source()
@@ -1938,6 +1953,10 @@ func _configure_phase136_view() -> void:
 func _configure_phase139_view() -> void:
 	if _phase139_view.is_empty():
 		return
+	KoalaSandTheme.apply_preferences($HUD, _phase139b_ui_scale, true)
+	call_deferred("_layout_workspace_panels")
+	if _phase139b_long_fixture:
+		factory_hud.apply_layout_fixture(1.6)
 	match _phase139_view:
 		"character-first-move": factory_hud.preview_onboarding_step("CHARACTER_INTRO")
 		"character-jetpack-hint": factory_hud.preview_onboarding_step("JETPACK")
@@ -1962,6 +1981,17 @@ func _configure_phase139_view() -> void:
 		"codex-help": _open_codex("concept:construction")
 		"controls-help": factory_hud.toggle_controls()
 		"tooltip-1600x900", "tooltip-2560x1440": factory_hud.preview_tooltip(HelpCatalog.component(41, _structure_definitions.get(41, {})), "catalog")
+		"catalog-100", "catalog-125", "catalog-150", "catalog-1600x900", "catalog-2560x1440":
+			if not factory_hud.modal_open(): factory_hud.toggle_catalog()
+		"catalog-tooltip", "tooltip-bottom-edge": factory_hud.preview_tooltip(HelpCatalog.component(41, _structure_definitions.get(41, {})), "catalog")
+		"current-goal": factory_hud.preview_goal_expanded()
+		"tooltip-right-edge":
+			factory_hud.preview_goal_expanded()
+			factory_hud.preview_tooltip({"title":"Current goal", "description":"Expand the goal for criteria, then open the linked physical principle when you need more context.", "codex_id":"concept:construction"}, "goal_help")
+		"stats": factory_hud.toggle_statistics()
+		"first-build-highlight": factory_hud.preview_onboarding_step("OPEN_CATALOG")
+		"first-research-highlight": factory_hud.preview_onboarding_step("RESEARCH")
+		"first-inspector-highlight": factory_hud.preview_onboarding_step("INSPECT")
 
 
 func _build_phase11_showcase() -> void:
@@ -2241,6 +2271,31 @@ func _create_phase135_player_ui() -> void:
 	_blueprint_panel.save_clipboard_requested.connect(_save_clipboard_blueprint)
 	_audio_mixer = AudioEventMixer.new(); _audio_mixer.name = "CentralAudioMixer"; add_child(_audio_mixer)
 	_feedback_renderer = PhysicalFeedbackRenderer.new(); _feedback_renderer.name = "PhysicalFeedback"; _feedback_renderer.z_index = 45; _feedback_renderer.cell_pixel_size = renderer.cell_pixel_size; add_child(_feedback_renderer)
+	call_deferred("_layout_workspace_panels")
+
+
+func _layout_workspace_panels() -> void:
+	if factory_hud == null or not is_instance_valid(factory_hud):
+		return
+	var safe := factory_hud.workspace_rect()
+	_fit_workspace_panel(research_tree, safe, Vector2(1100, 700), "center")
+	_fit_workspace_panel(_codex_panel, safe, Vector2(1140, 700), "center")
+	_fit_workspace_panel(_world_map_panel, safe, Vector2(900, 650), "center")
+	_fit_workspace_panel(_blueprint_panel, safe, Vector2(520, 660), "left")
+	_fit_workspace_panel(_experiments_panel, safe, Vector2(470, 640), "right")
+
+
+func _fit_workspace_panel(panel: Control, safe: Rect2, preferred_size: Vector2, alignment: String) -> void:
+	if panel == null or not is_instance_valid(panel):
+		return
+	panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	var panel_size := preferred_size.min(safe.size)
+	var x := safe.position.x
+	if alignment == "center": x = safe.position.x + (safe.size.x - panel_size.x) * 0.5
+	elif alignment == "right": x = safe.end.x - panel_size.x
+	panel.position = Vector2(x, safe.position.y)
+	panel.size = panel_size
+	panel.z_index = UILayoutPolicy.LAYER_MODAL
 
 
 func _run_owner_package_smoke() -> void:
@@ -2286,6 +2341,7 @@ func _run_owner_package_smoke() -> void:
 
 func _open_codex(entry_id := "") -> void:
 	if _codex_panel == null: return
+	_close_workspace_panels("codex")
 	_codex_panel.open_entry(entry_id)
 	factory_hud.set_external_modal("codex", true)
 	_audio_mixer.play_ui(&"click")
@@ -2293,15 +2349,28 @@ func _open_codex(entry_id := "") -> void:
 func _toggle_experiments() -> void:
 	if _experiments_panel == null: return
 	if _experiments_panel.visible: _experiments_panel.close()
-	else: _experiments_panel.open()
+	else:
+		_close_workspace_panels("experiments")
+		_experiments_panel.open()
 	factory_hud.set_external_modal("experiments", _experiments_panel.visible)
 
 func _toggle_blueprint_library() -> void:
 	if _blueprint_panel == null: return
 	if _blueprint_panel.visible: _blueprint_panel.close()
-	else: _blueprint_panel.open()
+	else:
+		_close_workspace_panels("blueprints")
+		_blueprint_panel.open()
 	factory_hud.set_external_modal("blueprints", _blueprint_panel.visible)
 	if _blueprint_panel.visible: factory_hud.demonstrate_onboarding("BLUEPRINT")
+
+
+func _close_workspace_panels(except_id: String) -> void:
+	var panels := {"research":research_tree, "codex":_codex_panel, "experiments":_experiments_panel, "blueprints":_blueprint_panel, "map":_world_map_panel}
+	for id: String in panels:
+		if id == except_id: continue
+		var panel := panels[id] as Control
+		if panel != null and is_instance_valid(panel) and panel.visible: panel.hide()
+		factory_hud.set_external_modal(id, false)
 
 
 func _request_research() -> void:
@@ -3815,6 +3884,10 @@ func _parse_capture_arguments() -> void:
 			_phase136_view = argument.trim_prefix("--phase136-view=")
 		elif argument.begins_with("--phase139-view="):
 			_phase139_view = argument.trim_prefix("--phase139-view=")
+		elif argument.begins_with("--phase139b-ui-scale="):
+			_phase139b_ui_scale = clampf(argument.trim_prefix("--phase139b-ui-scale=").to_float(), 0.75, 2.0)
+		elif argument == "--phase139b-long-fixture":
+			_phase139b_long_fixture = true
 		elif argument.begins_with("--validate-seeds="):
 			_validate_seeds = clampi(argument.trim_prefix("--validate-seeds=").to_int(), 1, 1000000)
 		elif argument.begins_with("--validate-seed-start="):

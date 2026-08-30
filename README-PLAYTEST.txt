@@ -1,4 +1,4 @@
-KOALASAND 0.1.0-playtest.4
+KOALASAND 0.1.0-playtest.5
 
 KoalaSand is a deterministic physical factory sandbox. Matter, heat, fluids, gases,
 fire, pressure, mechanical power and electricity interact in one editable world.

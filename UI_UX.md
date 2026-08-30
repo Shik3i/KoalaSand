@@ -70,3 +70,9 @@ ESC resolves placement, top modal/map/research, then pause. Onboarding is per-pr
 ## Phase 13.6 commercial-language pass
 
 `KoalaSandTheme` is now the single player-facing token source for surfaces, semantic state, spacing, radii, icon sizes, type hierarchy and `80/120/180 ms` motion. Main Menu/New Game, HUD, Catalog, Codex, Research, Inspector, Map, Blueprints, Experiments and Pause/Settings share the industrial slate/brass language. Character telemetry no longer exposes cells, solver range or FOV timing; Statistics resolves material names and player-scale totals rather than raw material IDs and native timing internals. The exact token contract is in `DESIGN_SYSTEM.md`.
+
+## Phase 13.9B responsive layout contract
+
+The permanent HUD now has two safe regions: one grouped top rail and one coherent bottom dock. Workspace panels occupy the rectangle between them and replace one another rather than stacking. The bottom dock owns a contextual tool strip, primary Quickbar, subordinate pager and secondary Catalog/Blueprint access; constrained 150% layouts wrap groups inside that single dock.
+
+Build Catalog cards use separate icon, name, category/lock and badge Controls. Columns respond to viewport and UI scale. Tooltips evaluate four orientations, use their real post-theme minimum size, and avoid the target, persistent HUD and open workspace. Guided highlight labels use the same safe-region policy and competing hints queue. The executable contract and supported matrix are documented in `PHASE139B_UI_REBUILD.md`.

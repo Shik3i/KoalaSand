@@ -4,7 +4,7 @@ extends Control
 signal unlock_requested(research_id: String)
 
 const NODE_SIZE := Vector2(232, 108)
-const TREE_ORIGIN := Vector2(46, 96)
+const TREE_ORIGIN := Vector2(46, 120)
 const TREE_SPACING := Vector2(250, 126)
 const MIN_ZOOM := 0.58
 const MAX_ZOOM := 1.20
@@ -68,8 +68,8 @@ func _draw() -> void:
 	draw_style_box(_panel_style(), Rect2(Vector2.ZERO, size))
 	var font := ThemeDB.fallback_font
 	draw_string(font, Vector2(34, 39), "RESEARCH", HORIZONTAL_ALIGNMENT_LEFT, -1, 23, KoalaSandTheme.COLOR_ACCENT_BRIGHT)
-	draw_string(font, Vector2(34, 64), "Physical discoveries unlock new ways to shape matter.", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, KoalaSandTheme.COLOR_TEXT_SECONDARY)
-	draw_string(font, Vector2(360, 64), "UNLOCKED · AVAILABLE · LOCKED BY PREREQUISITE · bright cost = AFFORDABLE", HORIZONTAL_ALIGNMENT_LEFT, size.x - 580, 11, KoalaSandTheme.COLOR_INFO)
+	draw_string(font, Vector2(34, 64), "Physical discoveries unlock new ways to shape matter.", HORIZONTAL_ALIGNMENT_LEFT, size.x - 68, 13, KoalaSandTheme.COLOR_TEXT_SECONDARY)
+	draw_string(font, Vector2(34, 88), "UNLOCKED · AVAILABLE · LOCKED BY PREREQUISITE · bright cost = AFFORDABLE", HORIZONTAL_ALIGNMENT_LEFT, size.x - 68, 11, KoalaSandTheme.COLOR_INFO)
 	for definition: Dictionary in _definitions:
 		var child_rect := _screen_rect(definition.id)
 		for prerequisite: String in definition.prerequisites:
@@ -107,7 +107,7 @@ func _draw() -> void:
 	draw_rect(button_rect, Color("f2b84b") if button_color.r > 0.5 else Color("607579"), false, 2.0)
 	var action := "UNLOCKED" if bool(selected_state.get("unlocked", false)) else "UNLOCK NOW" if bool(selected_state.get("available", false)) and bool(selected_state.get("affordable", false)) else "NEEDS MATERIAL" if bool(selected_state.get("available", false)) else "NEEDS PREREQUISITE"
 	draw_string(font, button_rect.position + Vector2(22, 28), action, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("fff0c7") if button_color.r > 0.5 else Color("9eb0b2"))
-	draw_string(font, Vector2(size.x - 212, 39), "Wheel zoom  ·  Drag pan  ·  T close", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, KoalaSandTheme.COLOR_TEXT_SECONDARY)
+	draw_string(font, Vector2(size.x - 270, 39), "Wheel zoom  ·  Drag pan  ·  %s close" % InputGlyphs.action(&"open_research"), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, KoalaSandTheme.COLOR_TEXT_SECONDARY)
 
 func _draw_node(definition: Dictionary, font: Font) -> void:
 	var rect := _screen_rect(definition.id)

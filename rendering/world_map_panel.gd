@@ -45,7 +45,7 @@ func _ready() -> void:
 	close_button.pressed.connect(close)
 	header.add_child(close_button)
 	_map = TextureRect.new()
-	_map.custom_minimum_size = Vector2(820, 490)
+	_map.custom_minimum_size = Vector2(720, 300)
 	_map.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_map.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_map.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST

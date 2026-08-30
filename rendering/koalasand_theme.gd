@@ -94,7 +94,7 @@ static func build(ui_scale := 1.0) -> Theme:
 	_set_label(result, "ScreenTitleLabel", 25, COLOR_TEXT, scale)
 	_set_label(result, "SectionTitleLabel", 17, COLOR_ACCENT_BRIGHT, scale)
 	_set_label(result, "SecondaryLabel", 13, COLOR_TEXT_SECONDARY, scale)
-	_set_label(result, "CaptionLabel", 11, COLOR_TEXT_DISABLED, scale)
+	_set_label(result, "CaptionLabel", 12, COLOR_TEXT_DISABLED, scale)
 	_set_label(result, "NumericLabel", 14, COLOR_TEXT, scale)
 	_set_label(result, "SuccessLabel", 13, COLOR_SUCCESS, scale)
 	_set_label(result, "WarningLabel", 13, COLOR_WARNING, scale)
@@ -111,11 +111,9 @@ static func animate_in(control: Control, reduced_motion := false, emphasis := fa
 		return
 	control.show()
 	control.modulate.a = 0.0
-	control.position.y += 6.0
 	var tween := control.create_tween().set_parallel(true)
 	tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tween.tween_property(control, "modulate:a", 1.0, MOTION_EMPHASIS if emphasis else MOTION_STANDARD)
-	tween.tween_property(control, "position:y", control.position.y - 6.0, MOTION_EMPHASIS if emphasis else MOTION_STANDARD)
 
 static func show_panel(control: Control, emphasis := false) -> void:
 	control.show()
@@ -146,6 +144,8 @@ static func apply_preferences(root: Node, ui_scale: float, motion_reduced: bool)
 static func _apply_theme_recursive(node: Node, next_theme: Theme) -> void:
 	if node is Control and (node == node.get_tree().current_scene or (node as Control).theme != null):
 		(node as Control).theme = next_theme
+	if node.has_method("apply_ui_scale"):
+		node.call("apply_ui_scale", float(next_theme.get_font_size("font_size", "Label")) / 14.0)
 	for child in node.get_children():
 		_apply_theme_recursive(child, next_theme)
 

@@ -14,7 +14,7 @@ func _check(condition: bool, label: String) -> void:
 
 
 func _run() -> void:
-	_check(BuildInfo.VERSION == "0.1.0-playtest.4", "playtest.4 runtime version")
+	_check(BuildInfo.VERSION == "0.1.0-playtest.5", "playtest.5 runtime version")
 	for path in ["res://ONBOARDING.md", "res://PHASE139_FTUE.md", "res://scripts/capture_phase139.ps1", "res://scripts/create_phase139_contact_sheet.ps1"]:
 		_check(FileAccess.file_exists(path), "%s exists" % path)
 

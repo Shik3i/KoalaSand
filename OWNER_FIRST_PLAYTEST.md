@@ -1,4 +1,4 @@
-# Owner First Playtest — 0.1.0-playtest.4
+# Owner First Playtest — 0.1.0-playtest.5
 
 **DO NOT STUDY THE CODEX FIRST. PLAY NORMALLY.**
 

@@ -8,12 +8,14 @@ var page := 0
 var index := 0
 var tool: Dictionary = {}
 var catalog_entry := false
+var icon_only := false
 
-func configure(value: Dictionary, slot_page: int = 0, slot_index: int = 0, from_catalog: bool = false) -> void:
+func configure(value: Dictionary, slot_page: int = 0, slot_index: int = 0, from_catalog: bool = false, only_icon: bool = false) -> void:
 	tool = value.duplicate(true)
 	page = slot_page
 	index = slot_index
 	catalog_entry = from_catalog
+	icon_only = only_icon
 	text = "" if tool.is_empty() or not catalog_entry else str(tool.get("name", "?"))
 	remove_meta("ux_tooltip_spec")
 	tooltip_text = ""
@@ -51,13 +53,22 @@ func _draw() -> void:
 	var locked := bool(tool.get("locked", false))
 	var color := KoalaSandTheme.COLOR_ACCENT_BRIGHT if not locked else KoalaSandTheme.COLOR_TEXT_DISABLED
 	var secondary := KoalaSandTheme.COLOR_INFO if not locked else Color("46575c")
-	var center := Vector2(30.0 if catalog_entry else size.x * 0.5, size.y * 0.46)
+	var center := Vector2(size.x * 0.5, size.y * 0.5 if icon_only else size.y * 0.46)
 	var key := _resolved_icon()
 	match key:
 		"pipe":
 			draw_arc(center, 10, 0, TAU, 24, color, 3)
 			draw_line(center + Vector2(-15, 0), center + Vector2(-10, 0), Color("67c7d8"), 3)
 			draw_line(center + Vector2(10, 0), center + Vector2(15, 0), Color("67c7d8"), 3)
+		"pipe_junction":
+			for direction in [Vector2.LEFT, Vector2.RIGHT, Vector2.UP]: draw_line(center, center + direction * 14.0, Color("67c7d8"), 4)
+			draw_circle(center, 5, color, false, 2)
+		"intake":
+			draw_arc(center, 11, 0, TAU, 24, color, 3)
+			draw_polyline(PackedVector2Array([center + Vector2(-16, -5), center + Vector2(-10, 0), center + Vector2(-16, 5)]), Color("67c7d8"), 3)
+		"outlet":
+			draw_arc(center, 11, 0, TAU, 24, color, 3)
+			draw_polyline(PackedVector2Array([center + Vector2(11, -5), center + Vector2(17, 0), center + Vector2(11, 5)]), Color("67c7d8"), 3)
 		"conveyor":
 			draw_line(center + Vector2(-13, 7), center + Vector2(13, 7), color, 3)
 			for x in [-10, -3, 4, 11]: draw_circle(center + Vector2(x, 7), 2.2, KoalaSandTheme.COLOR_WORLD_INK)
@@ -119,6 +130,15 @@ func _draw() -> void:
 		"generator":
 			draw_circle(center, 11, color, false, 3)
 			draw_polyline(PackedVector2Array([center + Vector2(-7, 2), center + Vector2(-2, -6), center + Vector2(1, 5), center + Vector2(7, -3)]), secondary, 2)
+		"power_pole":
+			draw_line(center + Vector2(0, -13), center + Vector2(0, 13), color, 3)
+			draw_line(center + Vector2(-11, -7), center + Vector2(11, -7), secondary, 3)
+			for x in [-9, 9]: draw_circle(center + Vector2(x, -7), 2.5, color)
+		"accumulator":
+			draw_rect(Rect2(center + Vector2(-13, -9), Vector2(26, 18)), color, false, 3)
+			draw_line(center + Vector2(-5, -4), center + Vector2(-5, 4), secondary, 3)
+			draw_line(center + Vector2(-9, 0), center + Vector2(-1, 0), secondary, 3)
+			draw_line(center + Vector2(3, 0), center + Vector2(10, 0), secondary, 3)
 		"wall_structural":
 			draw_rect(Rect2(center + Vector2(-13, -10), Vector2(26, 20)), color, false, 3)
 			draw_line(center + Vector2(-10, 0), center + Vector2(10, 0), secondary, 2)
@@ -162,7 +182,7 @@ func _draw() -> void:
 		draw_rect(Rect2(center + Vector2(5, 2), Vector2(11, 10)), Color("0b1217e8"), true)
 		draw_arc(center + Vector2(10.5, 2), 4.5, PI, TAU, 10, KoalaSandTheme.COLOR_TEXT_DISABLED, 2)
 		draw_rect(Rect2(center + Vector2(6, 3), Vector2(9, 8)), KoalaSandTheme.COLOR_TEXT_DISABLED, false, 2)
-	if not catalog_entry:
+	if not catalog_entry and not icon_only:
 		var shortcut := "0" if index == 9 else str(index + 1)
 		draw_string(ThemeDB.fallback_font, Vector2(5, 13), shortcut, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, KoalaSandTheme.COLOR_TEXT_SECONDARY)
 
@@ -170,12 +190,18 @@ func _resolved_icon() -> String:
 	if str(tool.get("kind", "")) != "structure":
 		return str(tool.get("icon", "tool"))
 	match int(tool.get("id", -1)):
-		12: return "pump"
+		11: return "pipe_junction"
+		12: return "intake"
+		13: return "outlet"
+		14: return "pump"
 		15: return "valve"
+		16: return "storage"
 		18: return "heater"
 		26, 33: return "shaft"
 		27: return "turbine"
 		28: return "generator"
+		29: return "power_pole"
+		31: return "accumulator"
 		34: return "heater"
 		37: return "wall_structural"
 		38: return "wall_metal"

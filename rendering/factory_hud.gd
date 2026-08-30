@@ -13,6 +13,7 @@ signal planning_pause_requested
 
 const PAGE_COUNT := 10
 const SLOT_COUNT := 10
+const CATALOG_NEW_MARKER := "NEW · "
 
 var _world: Variant
 var _pages: Array[Array] = []
@@ -56,6 +57,21 @@ var _controls_text: Label
 var _help_targets: Dictionary = {}
 var _menu_visibility: Dictionary = {}
 var _new_tool_keys: Dictionary = {}
+var _top_bar: PanelContainer
+var _bottom_dock: PanelContainer
+var _action_group: VBoxContainer
+var _quickbar_group: VBoxContainer
+var _utility_group: VBoxContainer
+var _catalog_scroll: ScrollContainer
+var _goal_details: HBoxContainer
+var _goal_button: Button
+var _goal_help_button: Button
+var _navigation_menu: PopupMenu
+var _ui_scale := 1.0
+var _category_buttons: Dictionary = {}
+var _catalog_empty: Label
+var _selected_tool_key := ""
+var _goal_expanded := false
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -65,6 +81,17 @@ func _ready() -> void:
 		_pages.append([])
 	_build_hud()
 	_install_help_layers()
+	call_deferred("_relayout")
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_RESIZED or what == NOTIFICATION_THEME_CHANGED:
+		call_deferred("_relayout")
+
+
+func apply_ui_scale(value: float) -> void:
+	_ui_scale = clampf(value, 0.75, 2.0)
+	call_deferred("_relayout")
 
 func initialize(world: Variant) -> void:
 	_world = world
@@ -84,7 +111,7 @@ func refresh(selected: String, speed: String) -> void:
 		return
 	var started := Time.get_ticks_usec()
 	var progression: Dictionary = _world.get_progression_state()
-	_reserves.text = "◆ %d   ▰ %d   ● %d" % [progression.glass, progression.iron, progression.gold]
+	_reserves.text = "Glass %d  ·  Iron %d  ·  Gold %d" % [progression.glass, progression.iron, progression.gold]
 	_status.text = "%s  ·  %s" % [selected, speed]
 	last_update_ms = float(Time.get_ticks_usec() - started) / 1000.0
 
@@ -99,6 +126,7 @@ func activate_slot(number: int) -> void:
 func toggle_catalog() -> void:
 	_catalog.visible = not _catalog.visible
 	if _catalog.visible:
+		_close_internal_modals_except("build_catalog")
 		_refresh_catalog()
 		KoalaSandTheme.animate_in(_catalog)
 		_ui_state.open_modal("build_catalog")
@@ -109,11 +137,12 @@ func toggle_catalog() -> void:
 		if not _new_tool_keys.is_empty():
 			_new_tool_keys.clear()
 			_refresh_catalog()
+	_sync_help_safe_regions()
 
 func set_page(page: int) -> void:
 	_active_page = wrapi(page, 0, PAGE_COUNT)
 	if _page_label != null:
-		_page_label.text = "%d / %d" % [_active_page + 1, PAGE_COUNT]
+		_page_label.text = "QUICKBAR  %d / %d" % [_active_page + 1, PAGE_COUNT]
 	_refresh_slots()
 
 func change_page(delta: int) -> void:
@@ -122,11 +151,13 @@ func change_page(delta: int) -> void:
 func toggle_statistics() -> void:
 	_statistics_panel.visible = not _statistics_panel.visible
 	if _statistics_panel.visible:
+		_close_internal_modals_except("statistics")
 		KoalaSandTheme.animate_in(_statistics_panel)
 		_ui_state.open_modal("statistics")
 		_refresh_statistics()
 	else:
 		_ui_state.close_modal("statistics")
+	_sync_help_safe_regions()
 
 func set_info_mode(enabled: bool) -> void:
 	_info_badge.visible = enabled
@@ -242,8 +273,13 @@ func preview_onboarding_step(step_id: String) -> void:
 
 
 func preview_tooltip(spec: Dictionary, target_id := "catalog") -> void:
+	call_deferred("_preview_tooltip_deferred", spec, target_id)
+
+
+func _preview_tooltip_deferred(spec: Dictionary, target_id: String) -> void:
 	var target := _help_targets.get(target_id) as Control
 	if _tooltip_layer != null and is_instance_valid(target):
+		_sync_help_safe_regions()
 		_tooltip_layer.show_virtual(spec, target.get_global_rect())
 
 
@@ -258,6 +294,7 @@ func show_inspector(title: String, lines: Array[String]) -> void:
 	_inspector.visible = not title.is_empty()
 	if was_hidden and _inspector.visible: KoalaSandTheme.animate_in(_inspector)
 	_inspector_text.text = "" if title.is_empty() else "%s\n\n%s" % [title.to_upper(), "\n".join(lines)]
+	_sync_help_safe_regions()
 
 func show_physical_inspector(result: Dictionary) -> void:
 	var title := str(result.get("title", ""))
@@ -283,12 +320,15 @@ func show_physical_inspector(result: Dictionary) -> void:
 	_inspector_codex_id = str(result.get("codex_id", ""))
 	demonstrate_onboarding("INSPECT")
 	if _highlight_layer != null: _highlight_layer.clear()
+	_sync_help_safe_regions()
 
 func set_planning_paused(paused: bool) -> void:
 	_planning_badge.visible = paused
 
 func set_current_goal(title: String, criteria: Array[String], help_id := "concept:construction") -> void:
 	_goal_title.text = title
+	if _goal_button != null:
+		_goal_button.text = "GOAL · %s  %s" % [title, "▾" if _goal_expanded else "▸"]
 	_goal_criteria.text = " · ".join(criteria.slice(0, 4))
 	_goal_help_id = help_id
 
@@ -314,16 +354,19 @@ func close_top_modal() -> bool:
 		"statistics": _statistics_panel.visible = false
 		"controls": _controls_panel.visible = false
 	_ui_state.close_modal(top)
+	_sync_help_safe_regions()
 	return true
 
 
 func set_external_modal(id: String, open: bool) -> void:
 	if open:
+		_close_internal_modals_except("")
 		_ui_state.open_modal(id)
 		if _highlight_layer != null: _highlight_layer.clear()
 	else:
 		_ui_state.close_modal(id)
 		_refresh_onboarding()
+	_sync_help_safe_regions()
 
 func serialize_quickbars() -> Dictionary:
 	return {"schema": 1, "active_page": _active_page, "pages": _pages.duplicate(true)}
@@ -353,128 +396,272 @@ func deserialize_session_state(state: Dictionary) -> bool:
 	return true
 
 func _build_hud() -> void:
-	var top := PanelContainer.new()
-	top.theme_type_variation = "HudPanel"
-	top.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	top.offset_left = 18; top.offset_top = 14; top.offset_right = -18; top.offset_bottom = 56
-	top.mouse_filter = Control.MOUSE_FILTER_STOP
-	add_child(top)
-	var top_row := HBoxContainer.new(); top.add_child(top_row)
-	_mode_badge = Label.new(); _mode_badge.text = "FACTORY"; _mode_badge.theme_type_variation = "SectionTitleLabel"; top_row.add_child(_mode_badge)
-	_status = Label.new(); _status.size_flags_horizontal = Control.SIZE_EXPAND_FILL; top_row.add_child(_status)
-	_reserves = Label.new(); _reserves.theme_type_variation = "NumericLabel"; top_row.add_child(_reserves)
-	var research := Button.new(); research.theme_type_variation = "QuietButton"; research.text = "Research"; research.tooltip_text = InputGlyphs.hint(&"open_research", "Open Research"); research.pressed.connect(func(): research_requested.emit()); top_row.add_child(research)
+	_build_top_bar()
+	_build_bottom_dock()
+	_build_catalog_panel()
+	_build_side_panels()
+	_build_controls_panel()
+
+
+func _build_top_bar() -> void:
+	_top_bar = PanelContainer.new()
+	_top_bar.name = "TopBar"
+	_top_bar.theme_type_variation = "HudPanel"
+	_top_bar.mouse_filter = Control.MOUSE_FILTER_STOP
+	_top_bar.z_index = UILayoutPolicy.LAYER_HUD
+	_top_bar.set_meta("layout_role", "top_safe_region")
+	add_child(_top_bar)
+	var column := VBoxContainer.new(); _top_bar.add_child(column)
+	var primary := HBoxContainer.new(); column.add_child(primary)
+	_mode_badge = Label.new(); _mode_badge.text = "FACTORY"; _mode_badge.theme_type_variation = "SectionTitleLabel"; primary.add_child(_mode_badge)
+	_status = Label.new(); _status.size_flags_horizontal = Control.SIZE_EXPAND_FILL; _status.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS; primary.add_child(_status)
+	_reserves = Label.new(); _reserves.theme_type_variation = "NumericLabel"; primary.add_child(_reserves)
+	HelpCatalog.attach(_reserves, {"title":"Research materials", "description":"Glass, Iron and Gold currently available for unlocking Research."})
+	var research := Button.new(); research.theme_type_variation = "PrimaryButton"; research.text = "Research"; research.tooltip_text = InputGlyphs.hint(&"open_research", "Open Research"); research.pressed.connect(func(): research_requested.emit()); primary.add_child(research)
 	_help_targets.research = research; HelpCatalog.attach(research, HelpCatalog.control("research"))
-	var codex := Button.new(); codex.theme_type_variation = "QuietButton"; codex.text = "Codex"; codex.pressed.connect(func(): codex_requested.emit("")); top_row.add_child(codex)
-	HelpCatalog.attach(codex, HelpCatalog.control("codex"))
-	var experiments := Button.new(); experiments.theme_type_variation = "QuietButton"; experiments.text = "Ideas"; experiments.tooltip_text = "Optional physical experiments"; experiments.pressed.connect(func(): experiments_requested.emit()); top_row.add_child(experiments)
-	HelpCatalog.attach(experiments, HelpCatalog.control("experiments"))
-	var map_button := Button.new(); map_button.theme_type_variation = "QuietButton"; map_button.text = "Map"; map_button.tooltip_text = InputGlyphs.hint(&"map", "Open Map"); map_button.pressed.connect(func(): map_requested.emit()); top_row.add_child(map_button)
-	HelpCatalog.attach(map_button, HelpCatalog.control("map"))
-	var statistics := Button.new(); statistics.theme_type_variation = "QuietButton"; statistics.text = "Stats"; statistics.tooltip_text = InputGlyphs.hint(&"statistics", "Open Statistics"); statistics.pressed.connect(toggle_statistics); top_row.add_child(statistics)
-	var overlay_button := Button.new(); overlay_button.theme_type_variation = "QuietButton"; overlay_button.text = "Overlay  ▾"; overlay_button.pressed.connect(_show_overlay_menu.bind(overlay_button)); top_row.add_child(overlay_button)
-	HelpCatalog.attach(overlay_button, HelpCatalog.control("overlay"))
-	var planning := Button.new(); planning.theme_type_variation = "QuietButton"; planning.text = "Plan"; planning.pressed.connect(func(): planning_pause_requested.emit()); top_row.add_child(planning)
+	var planning := Button.new(); planning.theme_type_variation = "QuietButton"; planning.text = "Plan"; planning.pressed.connect(func(): planning_pause_requested.emit()); primary.add_child(planning)
 	_help_targets.planning_pause = planning; HelpCatalog.attach(planning, HelpCatalog.control("planning_pause"))
-	var controls := Button.new(); controls.theme_type_variation = "QuietButton"; controls.text = "? Controls"; controls.pressed.connect(toggle_controls); top_row.add_child(controls)
+	var explore := Button.new(); explore.theme_type_variation = "QuietButton"; explore.text = "More  ▾"; explore.pressed.connect(_show_navigation_menu.bind(explore)); primary.add_child(explore)
+	HelpCatalog.attach(explore, {"title":"Explore", "description":"Open the Codex, experiment ideas, world map, or production statistics."})
+	var overlay_button := Button.new(); overlay_button.theme_type_variation = "QuietButton"; overlay_button.text = "View  ▾"; overlay_button.pressed.connect(_show_overlay_menu.bind(overlay_button)); primary.add_child(overlay_button)
+	HelpCatalog.attach(overlay_button, HelpCatalog.control("overlay"))
+	var controls := Button.new(); controls.theme_type_variation = "QuietButton"; controls.text = "?"; controls.pressed.connect(toggle_controls); primary.add_child(controls)
 	_help_targets.controls = controls; HelpCatalog.attach(controls, HelpCatalog.control("controls"))
+	_info_badge = Label.new(); _info_badge.text = "I · INFO MODE"; _info_badge.visible = false; _info_badge.add_theme_color_override("font_color", KoalaSandTheme.COLOR_INFO); primary.add_child(_info_badge)
+	_alert_text = Label.new(); _alert_text.visible = false; _alert_text.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS; _alert_text.add_theme_color_override("font_color", KoalaSandTheme.COLOR_DANGER); primary.add_child(_alert_text)
+	_planning_badge = Label.new(); _planning_badge.text = "Ⅱ  PLANNING PAUSE"; _planning_badge.visible = false; _planning_badge.theme_type_variation = "WarningLabel"; primary.add_child(_planning_badge)
+
+	_goal_details = HBoxContainer.new(); _goal_details.set_meta("layout_role", "current_goal"); column.add_child(_goal_details)
+	_goal_button = Button.new(); _goal_button.theme_type_variation = "QuietButton"; _goal_button.text = "GOAL · Discover physical processing  ▸"; _goal_button.pressed.connect(_toggle_goal_details); _goal_details.add_child(_goal_button)
+	_goal_title = Label.new(); _goal_title.text = "Discover physical processing"; _goal_title.visible = false; _goal_details.add_child(_goal_title)
+	_goal_criteria = Label.new(); _goal_criteria.text = "Build · Observe · Iterate"; _goal_criteria.visible = false; _goal_criteria.size_flags_horizontal = Control.SIZE_EXPAND_FILL; _goal_criteria.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS; _goal_criteria.add_theme_color_override("font_color", KoalaSandTheme.COLOR_TEXT_SECONDARY); _goal_details.add_child(_goal_criteria)
+	_onboarding_hint = Label.new(); _onboarding_hint.text = _onboarding.current_hint(); _onboarding_hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL; _onboarding_hint.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS; _onboarding_hint.add_theme_color_override("font_color", Color("a9c3bd")); _goal_details.add_child(_onboarding_hint)
+	_goal_help_button = Button.new(); _goal_help_button.theme_type_variation = "QuietButton"; _goal_help_button.text = "How?"; _goal_help_button.visible = false; _goal_help_button.pressed.connect(func(): codex_requested.emit(_goal_help_id)); _goal_details.add_child(_goal_help_button)
+	_help_targets.goal_help = _goal_help_button; _help_targets.status = _goal_button
+	HelpCatalog.attach(_goal_help_button, {"title":"Goal help", "description":"Opens a relevant physical principle. It explains the outcome without prescribing one exact factory design.", "codex_id":"concept:construction"})
+
+	_navigation_menu = PopupMenu.new()
+	for entry: Array in [["Codex",0], ["Ideas",1], ["Map",2], ["Statistics",3]]: _navigation_menu.add_item(str(entry[0]), int(entry[1]))
+	_navigation_menu.id_pressed.connect(_on_navigation_selected); add_child(_navigation_menu)
 	_overlay_menu = PopupMenu.new()
 	var overlays := [["None",0], ["Geology",1], ["Temperature",4], ["Magnetic Field",5], ["Automation",8], ["Underground Logistics",9], ["Production Flow",12], ["Power",13]]
 	for entry: Array in overlays: _overlay_menu.add_item(str(entry[0]), int(entry[1]))
 	_overlay_menu.id_pressed.connect(func(id: int): overlay_selected.emit(id)); add_child(_overlay_menu)
-	_info_badge = Label.new(); _info_badge.text = "I · INFO MODE"; _info_badge.visible = false; _info_badge.add_theme_color_override("font_color", Color("69d8e6")); top_row.add_child(_info_badge)
-	_alert_text = Label.new(); _alert_text.visible = false; _alert_text.add_theme_color_override("font_color", Color("ff815c")); top_row.add_child(_alert_text)
-	_planning_badge = Label.new(); _planning_badge.text = "Ⅱ  PLANNING PAUSE"; _planning_badge.visible = false; _planning_badge.theme_type_variation = "WarningLabel"; top_row.add_child(_planning_badge)
 
-	_action_row = HBoxContainer.new()
-	_action_row.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	_action_row.offset_left = 16; _action_row.offset_top = -68; _action_row.offset_right = 610; _action_row.offset_bottom = -16
-	_action_row.mouse_filter = Control.MOUSE_FILTER_STOP
-	add_child(_action_row)
+
+func _build_bottom_dock() -> void:
+	_bottom_dock = PanelContainer.new()
+	_bottom_dock.name = "BottomDock"
+	_bottom_dock.theme_type_variation = "HudPanel"
+	_bottom_dock.mouse_filter = Control.MOUSE_FILTER_STOP
+	_bottom_dock.z_index = UILayoutPolicy.LAYER_HUD
+	_bottom_dock.set_meta("layout_role", "bottom_safe_region")
+	add_child(_bottom_dock)
+	var margin := MarginContainer.new(); margin.add_theme_constant_override("margin_left", 8); margin.add_theme_constant_override("margin_top", 6); margin.add_theme_constant_override("margin_right", 8); margin.add_theme_constant_override("margin_bottom", 6); _bottom_dock.add_child(margin)
+	var dock_row := HFlowContainer.new(); dock_row.alignment = FlowContainer.ALIGNMENT_CENTER; margin.add_child(dock_row)
+	_action_group = VBoxContainer.new(); _action_group.set_meta("layout_role", "world_actions"); dock_row.add_child(_action_group)
+	var action_caption := Label.new(); action_caption.text = "WORLD TOOLS"; action_caption.theme_type_variation = "CaptionLabel"; _action_group.add_child(action_caption)
+	_action_row = HBoxContainer.new(); _action_group.add_child(_action_row)
 	var actions: Array[Dictionary] = [
-		{"name":"SELECT", "kind":"select", "id":0, "icon":"select"},
-		{"name":"PIPETTE", "kind":"pipette", "id":0, "icon":"pipette"},
-		{"name":"DIG", "kind":"terrain", "id":3, "icon":"dig"},
-		{"name":"CUT", "kind":"organic_clear", "id":0, "icon":"remove"},
-		{"name":"IGNITE", "kind":"ignite", "id":0, "icon":"furnace"},
-		{"name":"REMOVE", "kind":"remove", "id":0, "icon":"remove"},
-		{"name":"BLUEPRINT", "kind":"blueprint_select", "id":0, "icon":"blueprint"},
+		{"name":"Select", "kind":"select", "id":0, "icon":"select"}, {"name":"Pick", "kind":"pipette", "id":0, "icon":"pipette"},
+		{"name":"Dig", "kind":"terrain", "id":3, "icon":"dig"}, {"name":"Cut", "kind":"organic_clear", "id":0, "icon":"remove"},
+		{"name":"Ignite", "kind":"ignite", "id":0, "icon":"furnace"}, {"name":"Remove", "kind":"remove", "id":0, "icon":"remove"},
+		{"name":"Plan", "kind":"blueprint_select", "id":0, "icon":"blueprint"},
 	]
 	for action: Dictionary in actions:
-		var button := Button.new(); button.theme_type_variation = "QuietButton"; button.text = str(action.name).capitalize(); button.pressed.connect(func(): tool_selected.emit(action)); _action_row.add_child(button)
+		var button := Button.new(); button.theme_type_variation = "QuietButton"; button.text = str(action.name); button.pressed.connect(func(): tool_selected.emit(action)); _action_row.add_child(button)
 		var help_id: String = str({"pipette":"pipette", "blueprint_select":"blueprint", "select":"info_mode"}.get(str(action.kind), ""))
-		var action_help: Dictionary = HelpCatalog.control(help_id) if not help_id.is_empty() else {"title":str(action.name).capitalize(), "description":"Use this world tool to interact with physical cells and Components."}
-		HelpCatalog.attach(button, action_help)
+		HelpCatalog.attach(button, HelpCatalog.control(help_id) if not help_id.is_empty() else {"title":str(action.name), "description":"Use this world tool to interact with physical cells and Components."})
 		if str(action.kind) == "terrain": _help_targets.dig = button
 		if str(action.kind) == "select": _help_targets.info = button
 
-	var bottom := VBoxContainer.new()
-	bottom.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	bottom.offset_left = -360; bottom.offset_top = -96; bottom.offset_right = 360; bottom.offset_bottom = -14
-	bottom.mouse_filter = Control.MOUSE_FILTER_PASS
-	add_child(bottom)
-	var page_row := HBoxContainer.new(); page_row.alignment = BoxContainer.ALIGNMENT_CENTER; bottom.add_child(page_row)
-	var previous_page := Button.new(); previous_page.text = "◀"; previous_page.pressed.connect(change_page.bind(-1)); page_row.add_child(previous_page)
-	HelpCatalog.attach(previous_page, HelpCatalog.control("quickbar_previous"))
-	_page_label = Label.new(); _page_label.text = "1 / %d" % PAGE_COUNT; _page_label.theme_type_variation = "CaptionLabel"; page_row.add_child(_page_label)
-	var next_page := Button.new(); next_page.text = "▶"; next_page.pressed.connect(change_page.bind(1)); page_row.add_child(next_page)
-	HelpCatalog.attach(next_page, HelpCatalog.control("quickbar_next"))
-	var catalog_button := Button.new(); catalog_button.text = "Build catalog"; catalog_button.tooltip_text = InputGlyphs.hint(&"build_catalog", "Open Catalog"); catalog_button.pressed.connect(toggle_catalog); page_row.add_child(catalog_button)
-	_help_targets.catalog = catalog_button; HelpCatalog.attach(catalog_button, HelpCatalog.control("catalog"))
-	var blueprint_button := Button.new(); blueprint_button.text = "Blueprints"; blueprint_button.pressed.connect(func(): blueprints_requested.emit()); page_row.add_child(blueprint_button)
-	_help_targets.blueprints = blueprint_button; HelpCatalog.attach(blueprint_button, HelpCatalog.control("blueprint"))
-	var row := HBoxContainer.new(); row.alignment = BoxContainer.ALIGNMENT_CENTER; row.add_theme_constant_override("separation", 5); bottom.add_child(row)
+	var left_separator := VSeparator.new(); dock_row.add_child(left_separator)
+	_quickbar_group = VBoxContainer.new(); _quickbar_group.size_flags_horizontal = Control.SIZE_EXPAND_FILL; _quickbar_group.set_meta("layout_role", "quickbar"); dock_row.add_child(_quickbar_group)
+	var slot_row := HBoxContainer.new(); slot_row.alignment = BoxContainer.ALIGNMENT_CENTER; slot_row.add_theme_constant_override("separation", 5); _quickbar_group.add_child(slot_row)
 	for index in SLOT_COUNT:
-		var slot := ToolSlot.new(); slot.custom_minimum_size = Vector2(62, 50); slot.index = index
+		var slot := ToolSlot.new(); slot.custom_minimum_size = Vector2(54, 48); slot.index = index
 		slot.pressed.connect(_activate_visible_slot.bind(index)); slot.slot_drop.connect(_on_slot_drop); slot.slot_clear.connect(_on_slot_clear)
-		row.add_child(slot); _slot_nodes.append(slot)
-	_help_targets.quickbar = row
+		slot_row.add_child(slot); _slot_nodes.append(slot)
+	_help_targets.quickbar = slot_row
+	var page_row := HBoxContainer.new(); page_row.alignment = BoxContainer.ALIGNMENT_CENTER; _quickbar_group.add_child(page_row)
+	var previous_page := Button.new(); previous_page.theme_type_variation = "QuietButton"; previous_page.text = "◀"; previous_page.pressed.connect(change_page.bind(-1)); page_row.add_child(previous_page)
+	HelpCatalog.attach(previous_page, HelpCatalog.control("quickbar_previous"))
+	_page_label = Label.new(); _page_label.text = "QUICKBAR  1 / %d" % PAGE_COUNT; _page_label.theme_type_variation = "CaptionLabel"; page_row.add_child(_page_label)
+	var next_page := Button.new(); next_page.theme_type_variation = "QuietButton"; next_page.text = "▶"; next_page.pressed.connect(change_page.bind(1)); page_row.add_child(next_page)
+	HelpCatalog.attach(next_page, HelpCatalog.control("quickbar_next"))
 
-	_catalog = PanelContainer.new()
-	_catalog.theme_type_variation = "ElevatedPanel"
-	_catalog.visible = false
-	_catalog.set_anchors_preset(Control.PRESET_CENTER_LEFT)
-	_catalog.offset_left = 18; _catalog.offset_top = -330; _catalog.offset_right = 650; _catalog.offset_bottom = 330
-	add_child(_catalog)
+	var right_separator := VSeparator.new(); dock_row.add_child(right_separator)
+	_utility_group = VBoxContainer.new(); _utility_group.set_meta("layout_role", "dock_utilities"); dock_row.add_child(_utility_group)
+	var utility_caption := Label.new(); utility_caption.text = "BUILD"; utility_caption.theme_type_variation = "CaptionLabel"; _utility_group.add_child(utility_caption)
+	var utility_row := HBoxContainer.new(); _utility_group.add_child(utility_row)
+	var catalog_button := Button.new(); catalog_button.theme_type_variation = "PrimaryButton"; catalog_button.text = "Catalog  [%s]" % InputGlyphs.action(&"build_catalog"); catalog_button.pressed.connect(toggle_catalog); utility_row.add_child(catalog_button)
+	_help_targets.catalog = catalog_button; HelpCatalog.attach(catalog_button, HelpCatalog.control("catalog"))
+	var blueprint_button := Button.new(); blueprint_button.theme_type_variation = "QuietButton"; blueprint_button.text = "Blueprints"; blueprint_button.pressed.connect(func(): blueprints_requested.emit()); utility_row.add_child(blueprint_button)
+	_help_targets.blueprints = blueprint_button; HelpCatalog.attach(blueprint_button, HelpCatalog.control("blueprint"))
+
+
+func _build_catalog_panel() -> void:
+	_catalog = PanelContainer.new(); _catalog.name = "BuildCatalog"; _catalog.theme_type_variation = "ElevatedPanel"; _catalog.visible = false; _catalog.mouse_filter = Control.MOUSE_FILTER_STOP; _catalog.z_index = UILayoutPolicy.LAYER_MODAL; _catalog.set_meta("layout_role", "modal_catalog"); add_child(_catalog)
 	var catalog_margin := MarginContainer.new(); catalog_margin.add_theme_constant_override("margin_left", 16); catalog_margin.add_theme_constant_override("margin_top", 14); catalog_margin.add_theme_constant_override("margin_right", 16); catalog_margin.add_theme_constant_override("margin_bottom", 14); _catalog.add_child(catalog_margin)
 	var catalog_column := VBoxContainer.new(); catalog_margin.add_child(catalog_column)
 	var title_row := HBoxContainer.new(); catalog_column.add_child(title_row)
 	var title := Label.new(); title.text = "Build catalog"; title.theme_type_variation = "ScreenTitleLabel"; title.size_flags_horizontal = Control.SIZE_EXPAND_FILL; title_row.add_child(title)
-	var close_catalog := Button.new(); close_catalog.theme_type_variation = "QuietButton"; close_catalog.text = "Close  [B]"; close_catalog.pressed.connect(toggle_catalog); title_row.add_child(close_catalog)
+	var close_catalog := Button.new(); close_catalog.theme_type_variation = "QuietButton"; close_catalog.text = "Close  [%s]" % InputGlyphs.action(&"build_catalog"); close_catalog.pressed.connect(toggle_catalog); title_row.add_child(close_catalog)
 	_search = LineEdit.new(); _search.placeholder_text = "Search by name or purpose…"; _search.text_changed.connect(func(_text: String): _refresh_catalog()); catalog_column.add_child(_search)
-	var category_row := HBoxContainer.new(); catalog_column.add_child(category_row)
+	var category_row := HFlowContainer.new(); catalog_column.add_child(category_row)
 	for category in ["ALL", "LOGISTICS", "PROCESSING", "FLUIDS", "THERMAL", "POWER", "AUTOMATION", "STRUCTURES"]:
-		var category_button := Button.new(); category_button.theme_type_variation = "QuietButton"; category_button.text = category.capitalize(); category_button.pressed.connect(func(): _category_filter = category; _refresh_catalog()); category_row.add_child(category_button)
-	var scroll := ScrollContainer.new(); scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL; catalog_column.add_child(scroll)
-	_catalog_grid = GridContainer.new(); _catalog_grid.columns = 3; _catalog_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL; scroll.add_child(_catalog_grid)
-	var hint := Label.new(); hint.text = "Select · drag to quickbar · right-click a slot to clear"; hint.theme_type_variation = "CaptionLabel"; catalog_column.add_child(hint)
+		var category_button := Button.new(); category_button.theme_type_variation = "QuietButton"; category_button.toggle_mode = true; category_button.text = category.capitalize(); category_button.pressed.connect(func(): _category_filter = category; _refresh_catalog()); category_row.add_child(category_button); _category_buttons[category] = category_button
+	_catalog_scroll = ScrollContainer.new(); _catalog_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL; catalog_column.add_child(_catalog_scroll)
+	_catalog_grid = GridContainer.new(); _catalog_grid.columns = 3; _catalog_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL; _catalog_scroll.add_child(_catalog_grid)
+	_catalog_empty = Label.new(); _catalog_empty.text = "No Components match this search.\nTry a category, a physical purpose, or clear the search."; _catalog_empty.theme_type_variation = "SecondaryLabel"; _catalog_empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; _catalog_empty.visible = false; catalog_column.add_child(_catalog_empty)
+	var hint := Label.new(); hint.text = "Select or drag to quickbar · right-click a quickbar slot to clear"; hint.theme_type_variation = "CaptionLabel"; catalog_column.add_child(hint)
 
-	_statistics_panel = PanelContainer.new(); _statistics_panel.visible = false; _statistics_panel.set_anchors_preset(Control.PRESET_CENTER_RIGHT); _statistics_panel.offset_left = -420; _statistics_panel.offset_top = -280; _statistics_panel.offset_right = -16; _statistics_panel.offset_bottom = 280; add_child(_statistics_panel)
+
+func _build_side_panels() -> void:
+	_statistics_panel = PanelContainer.new(); _statistics_panel.name = "StatisticsPanel"; _statistics_panel.visible = false; _statistics_panel.mouse_filter = Control.MOUSE_FILTER_STOP; _statistics_panel.z_index = UILayoutPolicy.LAYER_MODAL; add_child(_statistics_panel)
 	var statistics_margin := MarginContainer.new(); statistics_margin.add_theme_constant_override("margin_left", 16); statistics_margin.add_theme_constant_override("margin_top", 14); statistics_margin.add_theme_constant_override("margin_right", 16); statistics_margin.add_theme_constant_override("margin_bottom", 14); _statistics_panel.add_child(statistics_margin)
 	_statistics_text = Label.new(); _statistics_text.vertical_alignment = VERTICAL_ALIGNMENT_TOP; statistics_margin.add_child(_statistics_text)
-
-	_inspector = PanelContainer.new(); _inspector.theme_type_variation = "ElevatedPanel"; _inspector.visible = false; _inspector.set_anchors_preset(Control.PRESET_CENTER_RIGHT); _inspector.offset_left = -390; _inspector.offset_top = -220; _inspector.offset_right = -18; _inspector.offset_bottom = 220; _inspector.mouse_filter = Control.MOUSE_FILTER_STOP; add_child(_inspector)
+	_inspector = PanelContainer.new(); _inspector.name = "InspectorPanel"; _inspector.theme_type_variation = "ElevatedPanel"; _inspector.visible = false; _inspector.mouse_filter = Control.MOUSE_FILTER_STOP; _inspector.z_index = UILayoutPolicy.LAYER_PANEL; add_child(_inspector)
 	var inspector_margin := MarginContainer.new(); inspector_margin.add_theme_constant_override("margin_left", 16); inspector_margin.add_theme_constant_override("margin_top", 14); inspector_margin.add_theme_constant_override("margin_right", 16); inspector_margin.add_theme_constant_override("margin_bottom", 14); _inspector.add_child(inspector_margin)
-	_inspector_text = Label.new(); _inspector_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; inspector_margin.add_child(_inspector_text)
-	var inspector_column := VBoxContainer.new()
-	inspector_margin.remove_child(_inspector_text)
-	inspector_margin.add_child(inspector_column)
-	inspector_column.add_child(_inspector_text)
+	var inspector_column := VBoxContainer.new(); inspector_margin.add_child(inspector_column)
+	_inspector_text = Label.new(); _inspector_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; inspector_column.add_child(_inspector_text)
 	_inspector_advanced_button = Button.new(); _inspector_advanced_button.text = "ADVANCED DETAILS"; _inspector_advanced_button.visible = false; _inspector_advanced_button.pressed.connect(func(): _inspector_advanced.visible = not _inspector_advanced.visible); inspector_column.add_child(_inspector_advanced_button)
-	_inspector_advanced = Label.new(); _inspector_advanced.visible = false; _inspector_advanced.add_theme_color_override("font_color", Color("7f9295")); inspector_column.add_child(_inspector_advanced)
+	_inspector_advanced = Label.new(); _inspector_advanced.visible = false; _inspector_advanced.add_theme_color_override("font_color", KoalaSandTheme.COLOR_TEXT_DISABLED); inspector_column.add_child(_inspector_advanced)
 	var inspector_codex := Button.new(); inspector_codex.text = "OPEN IN CODEX"; inspector_codex.pressed.connect(func(): if not _inspector_codex_id.is_empty(): codex_requested.emit(_inspector_codex_id)); inspector_column.add_child(inspector_codex)
 
-	var onboarding_panel := PanelContainer.new(); onboarding_panel.theme_type_variation = "HudPanel"; onboarding_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT); onboarding_panel.offset_left = -390; onboarding_panel.offset_top = 70; onboarding_panel.offset_right = -18; onboarding_panel.offset_bottom = 202; onboarding_panel.mouse_filter = Control.MOUSE_FILTER_PASS; add_child(onboarding_panel)
-	var goal_column := VBoxContainer.new(); onboarding_panel.add_child(goal_column)
-	var goal_badge := Label.new(); goal_badge.text = "CURRENT GOAL"; goal_badge.theme_type_variation = "CaptionLabel"; goal_column.add_child(goal_badge)
-	_goal_title = Label.new(); _goal_title.text = "Discover physical processing"; _goal_title.theme_type_variation = "SectionTitleLabel"; goal_column.add_child(_goal_title)
-	_goal_criteria = Label.new(); _goal_criteria.text = "Build · Observe · Iterate"; _goal_criteria.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS; _goal_criteria.add_theme_color_override("font_color", KoalaSandTheme.COLOR_TEXT_SECONDARY); goal_column.add_child(_goal_criteria)
-	var goal_help := Button.new(); goal_help.theme_type_variation = "QuietButton"; goal_help.text = "How?"; goal_help.pressed.connect(func(): codex_requested.emit(_goal_help_id)); goal_column.add_child(goal_help)
-	_help_targets.goal_help = goal_help
-	HelpCatalog.attach(goal_help, {"title":"Goal help", "description":"Opens a relevant physical principle. It explains the outcome without prescribing one exact factory design.", "codex_id":"concept:construction"})
-	_onboarding_hint = Label.new(); _onboarding_hint.text = _onboarding.current_hint(); _onboarding_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; _onboarding_hint.add_theme_color_override("font_color", Color("a9c3bd")); goal_column.add_child(_onboarding_hint)
-	_help_targets.status = onboarding_panel
-	_build_controls_panel()
+
+func _relayout() -> void:
+	if _top_bar == null or _bottom_dock == null:
+		return
+	var viewport_size := size
+	if viewport_size.x < 100.0 or viewport_size.y < 100.0:
+		viewport_size = get_viewport_rect().size
+	var margin := 14.0
+	var top_height := clampf(maxf(84.0 * _ui_scale, _top_bar.get_combined_minimum_size().y), 84.0, viewport_size.y * 0.22)
+	_top_bar.position = Vector2(margin, margin)
+	_top_bar.size = Vector2(viewport_size.x - margin * 2.0, top_height)
+	var dock_width := minf(viewport_size.x - margin * 2.0, maxf(viewport_size.x * 0.82, 1160.0 * _ui_scale))
+	var responsive_dock_height := 214.0 if _ui_scale >= 1.3 and viewport_size.x <= 1700.0 else 92.0 * _ui_scale
+	var dock_height := clampf(maxf(responsive_dock_height, _bottom_dock.get_combined_minimum_size().y), 92.0, viewport_size.y * 0.28)
+	_bottom_dock.position = Vector2((viewport_size.x - dock_width) * 0.5, viewport_size.y - dock_height - margin)
+	_bottom_dock.size = Vector2(dock_width, dock_height)
+	for slot: ToolSlot in _slot_nodes:
+		slot.custom_minimum_size = Vector2(54.0 * _ui_scale, 48.0 * _ui_scale)
+	var top_end := _top_bar.position.y + _top_bar.size.y
+	var available_height := maxf(360.0, _bottom_dock.position.y - top_end - 34.0)
+	var catalog_width := minf(viewport_size.x - margin * 2.0, maxf(viewport_size.x * 0.58, 720.0 * _ui_scale))
+	_catalog.position = Vector2(margin, top_end + 12.0)
+	_catalog.size = Vector2(catalog_width, available_height)
+	_catalog_grid.columns = UILayoutPolicy.catalog_columns(maxf(480.0, catalog_width - 48.0), _ui_scale)
+	for card: Node in _catalog_grid.get_children():
+		if card is CatalogCard: (card as CatalogCard).apply_ui_scale(_ui_scale)
+	var side_width := minf(420.0 * _ui_scale, viewport_size.x * 0.42)
+	var side_height := minf(560.0 * _ui_scale, available_height)
+	_statistics_panel.position = Vector2(viewport_size.x - side_width - margin, top_end + 12.0)
+	_statistics_panel.size = Vector2(side_width, side_height)
+	var inspector_width := minf(390.0 * _ui_scale, viewport_size.x * 0.40)
+	var inspector_height := minf(440.0 * _ui_scale, available_height)
+	_inspector.position = Vector2(viewport_size.x - inspector_width - margin, top_end + 12.0)
+	_inspector.size = Vector2(inspector_width, inspector_height)
+	if _controls_panel != null:
+		var controls_size := Vector2(minf(660.0 * _ui_scale, viewport_size.x - 48.0), minf(600.0 * _ui_scale, viewport_size.y - 64.0))
+		_controls_panel.position = (viewport_size - controls_size) * 0.5
+		_controls_panel.size = controls_size
+	_sync_help_safe_regions()
+
+
+func layout_metrics() -> Dictionary:
+	var cards: Array[Dictionary] = []
+	if _catalog_grid != null:
+		for node: Node in _catalog_grid.get_children():
+			if node is CatalogCard: cards.append((node as CatalogCard).layout_rects())
+	return {
+		"viewport":Rect2(Vector2.ZERO, size), "top":_top_bar.get_global_rect(), "bottom":_bottom_dock.get_global_rect(),
+		"actions":_action_group.get_global_rect(), "quickbar":_quickbar_group.get_global_rect(), "utilities":_utility_group.get_global_rect(),
+		"goal":_goal_details.get_global_rect(), "catalog":_catalog.get_global_rect(), "catalog_columns":_catalog_grid.columns, "catalog_cards":cards,
+	}
+
+
+func layout_surfaces() -> Dictionary:
+	return {"top":_top_bar, "bottom":_bottom_dock, "catalog":_catalog, "statistics":_statistics_panel, "controls":_controls_panel, "inspector":_inspector}
+
+
+func workspace_rect() -> Rect2:
+	if _top_bar == null or _bottom_dock == null:
+		return Rect2(Vector2(12, 12), size - Vector2(24, 24))
+	var top_end := _top_bar.position.y + _top_bar.size.y + 12.0
+	return Rect2(Vector2(14.0, top_end), Vector2(size.x - 28.0, maxf(1.0, _bottom_dock.position.y - top_end - 12.0)))
+
+
+func visible_modal_ids() -> Array[String]:
+	var result: Array[String] = []
+	if _catalog.visible: result.append("build_catalog")
+	if _statistics_panel.visible: result.append("statistics")
+	if _controls_panel.visible: result.append("controls")
+	return result
+
+
+func apply_layout_fixture(multiplier := 1.6) -> void:
+	var suffix := " · EXTENDED PLAYER-FACING LOCALIZATION FIXTURE".repeat(maxi(1, ceili(multiplier)))
+	_status.text = "Vibration actuator selected%s" % suffix
+	_goal_title.text = "Build a pressure-safe wet-processing line%s" % suffix
+	_goal_button.text = "GOAL · %s  ▾" % _goal_title.text
+	_goal_criteria.text = "Move material · separate heavy concentrate · prevent local pipe damage%s" % suffix
+	_onboarding_hint.text = "Open the Build Catalog and inspect the physical cause before changing the factory%s" % suffix
+	if has_meta("catalog_tools"):
+		var tools: Array = get_meta("catalog_tools")
+		for index in mini(8, tools.size()):
+			var tool: Dictionary = tools[index]
+			tool.name = "%s%s" % [tool.name, suffix]
+		_refresh_catalog()
+	call_deferred("_relayout")
+
+
+func _toggle_goal_details() -> void:
+	_goal_expanded = not _goal_expanded
+	_goal_criteria.visible = _goal_expanded
+	_goal_help_button.visible = _goal_expanded
+	_goal_button.text = "GOAL · %s  %s" % [_goal_title.text, "▾" if _goal_expanded else "▸"]
+	call_deferred("_relayout")
+
+
+func preview_goal_expanded() -> void:
+	if not _goal_expanded: _toggle_goal_details()
+
+
+func _show_navigation_menu(button: Button) -> void:
+	_navigation_menu.position = Vector2i(button.global_position + Vector2(0, button.size.y))
+	_navigation_menu.popup()
+
+
+func _on_navigation_selected(id: int) -> void:
+	match id:
+		0: codex_requested.emit("")
+		1: experiments_requested.emit()
+		2: map_requested.emit()
+		3: toggle_statistics()
+
+
+func _close_internal_modals_except(id: String) -> void:
+	if id != "build_catalog" and _catalog != null and _catalog.visible:
+		_catalog.hide(); _ui_state.close_modal("build_catalog")
+	if id != "statistics" and _statistics_panel != null and _statistics_panel.visible:
+		_statistics_panel.hide(); _ui_state.close_modal("statistics")
+	if id != "controls" and _controls_panel != null and _controls_panel.visible:
+		_controls_panel.hide(); _ui_state.close_modal("controls")
+
+
+func _sync_help_safe_regions() -> void:
+	if _tooltip_layer == null or _top_bar == null or _bottom_dock == null:
+		return
+	var reserved: Array[Rect2] = [_top_bar.get_global_rect(), _bottom_dock.get_global_rect()]
+	if _inspector != null and _inspector.visible: reserved.append(_inspector.get_global_rect())
+	var modals: Array[Rect2] = []
+	for panel: PanelContainer in [_catalog, _statistics_panel, _controls_panel]:
+		if panel != null and panel.visible: modals.append(panel.get_global_rect())
+	_tooltip_layer.set_safe_regions(reserved, modals)
+	if _highlight_layer != null: _highlight_layer.set_safe_regions(reserved)
+
 
 func _build_tool_data() -> void:
 	var structures: Dictionary = {}
@@ -581,12 +768,26 @@ func _refresh_catalog() -> void:
 	if _catalog_grid == null or not has_meta("catalog_tools"):
 		return
 	for child in _catalog_grid.get_children(): child.queue_free()
+	for category: String in _category_buttons:
+		(_category_buttons[category] as Button).button_pressed = category == _category_filter
 	var query := _search.text.strip_edges().to_lower() if _search != null else ""
+	var visible_cards := 0
 	for tool: Dictionary in get_meta("catalog_tools"):
 		if not query.is_empty() and not query in str(tool.name).to_lower() and not query in str(tool.category).to_lower(): continue
 		if _category_filter != "ALL" and _canonical_category(tool) != _category_filter: continue
-		var entry := ToolSlot.new(); entry.custom_minimum_size = Vector2(188, 76); entry.configure(tool, 0, 0, true); entry.text = "       %s%s\n       %s" % ["NEW · " if _new_tool_keys.has(_tool_key(tool)) else "", tool.name, "Research required" if bool(tool.get("locked", false)) else _canonical_category(tool).capitalize()]; entry.alignment = HORIZONTAL_ALIGNMENT_LEFT; entry.pressed.connect(func(): tool_selected.emit(tool)); _catalog_grid.add_child(entry)
+		var display_tool := tool.duplicate(true); display_tool.display_category = _canonical_category(tool).capitalize()
+		var entry := CatalogCard.new(); entry.size_flags_horizontal = Control.SIZE_EXPAND_FILL; _catalog_grid.add_child(entry); entry.configure(display_tool, _new_tool_keys.has(_tool_key(tool)), _selected_tool_key == _tool_key(tool)); entry.apply_ui_scale(_ui_scale); entry.tool_activated.connect(_on_catalog_tool_activated)
 		if _tooltip_layer != null: _tooltip_layer.bind(entry)
+		visible_cards += 1
+	_catalog_empty.visible = visible_cards == 0
+	call_deferred("_relayout")
+
+
+func _on_catalog_tool_activated(selected: Dictionary) -> void:
+	_selected_tool_key = _tool_key(selected)
+	for node: Node in _catalog_grid.get_children():
+		if node is CatalogCard: (node as CatalogCard).set_selected(_tool_key((node as CatalogCard).tool) == _selected_tool_key)
+	tool_selected.emit(selected)
 
 
 func _tool_key(tool: Dictionary) -> String:
@@ -667,6 +868,7 @@ func materials_id_for_tool(tool: Dictionary, registry: MaterialRegistry) -> int:
 func toggle_controls() -> void:
 	_controls_panel.visible = not _controls_panel.visible
 	if _controls_panel.visible:
+		_close_internal_modals_except("controls")
 		_controls_text.text = _controls_copy()
 		_ui_state.open_modal("controls")
 		KoalaSandTheme.animate_in(_controls_panel)
@@ -674,10 +876,11 @@ func toggle_controls() -> void:
 	else:
 		_ui_state.close_modal("controls")
 		_refresh_onboarding()
+	_sync_help_safe_regions()
 
 
 func _build_controls_panel() -> void:
-	_controls_panel = PanelContainer.new(); _controls_panel.theme_type_variation = "ModalPanel"; _controls_panel.visible = false; _controls_panel.set_anchors_preset(Control.PRESET_CENTER); _controls_panel.offset_left = -330; _controls_panel.offset_top = -300; _controls_panel.offset_right = 330; _controls_panel.offset_bottom = 300; _controls_panel.mouse_filter = Control.MOUSE_FILTER_STOP; add_child(_controls_panel)
+	_controls_panel = PanelContainer.new(); _controls_panel.name = "ControlsPanel"; _controls_panel.theme_type_variation = "ModalPanel"; _controls_panel.visible = false; _controls_panel.mouse_filter = Control.MOUSE_FILTER_STOP; _controls_panel.z_index = UILayoutPolicy.LAYER_MODAL; add_child(_controls_panel)
 	var column := VBoxContainer.new(); _controls_panel.add_child(column)
 	var row := HBoxContainer.new(); column.add_child(row)
 	var title := Label.new(); title.text = "Controls"; title.theme_type_variation = "ScreenTitleLabel"; title.size_flags_horizontal = Control.SIZE_EXPAND_FILL; row.add_child(title)
@@ -707,6 +910,7 @@ func _install_help_layers() -> void:
 	_highlight_layer = GuidedHighlightLayer.new(); add_child(_highlight_layer)
 	_tooltip_layer = ContextTooltipLayer.new(); _tooltip_layer.codex_requested.connect(func(entry_id: String): codex_requested.emit(entry_id)); add_child(_tooltip_layer)
 	_tooltip_layer.call_deferred("bind_tree", self)
+	call_deferred("_sync_help_safe_regions")
 	call_deferred("_refresh_onboarding")
 
 

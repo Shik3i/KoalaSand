@@ -33,7 +33,8 @@ $Tests = @(
     'tests/phase136_correctness.gd',
     'tests/phase137_hardening.gd',
     'tests/phase138_polish.gd',
-    'tests/phase139_ftue.gd'
+    'tests/phase139_ftue.gd',
+    'tests/phase139b_layout.gd'
 )
 if ($Quick) {
     $Tests = @('tests/test_runner.gd', 'tests/native_correctness.gd', 'tests/phase13_correctness.gd', 'tests/phase13_persistence.gd', 'tests/phase137_hardening.gd')

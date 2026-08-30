@@ -54,7 +54,7 @@ func _build_ui() -> void:
 	var heading := Label.new(); heading.text = "Physics Codex"; heading.theme_type_variation = "ScreenTitleLabel"; heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL; bar.add_child(heading)
 	var back := Button.new(); back.text = "←"; back.tooltip_text = "Back"; back.pressed.connect(_history_step.bind(-1)); bar.add_child(back)
 	var forward := Button.new(); forward.text = "→"; forward.tooltip_text = "Forward"; forward.pressed.connect(_history_step.bind(1)); bar.add_child(forward)
-	var close_button := Button.new(); close_button.theme_type_variation = "QuietButton"; close_button.text = "Close  [K]"; close_button.pressed.connect(close); bar.add_child(close_button)
+	var close_button := Button.new(); close_button.theme_type_variation = "QuietButton"; close_button.text = "Close  [%s]" % InputGlyphs.action(&"open_codex"); close_button.pressed.connect(close); bar.add_child(close_button)
 	_search.placeholder_text = "Search materials, Components and physics: heat, steam, screen, gold, oxygen…"
 	_search.text_changed.connect(_refresh_results); column.add_child(_search)
 	var content := HSplitContainer.new(); content.size_flags_vertical = Control.SIZE_EXPAND_FILL; content.split_offset = 330; column.add_child(content)
@@ -63,7 +63,7 @@ func _build_ui() -> void:
 	var detail := VBoxContainer.new(); detail.custom_minimum_size.x = 720; detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL; detail_scroll.add_child(detail)
 	_kind.theme_type_variation = "CaptionLabel"; detail.add_child(_kind)
 	_title.theme_type_variation = "ScreenTitleLabel"; detail.add_child(_title)
-	_body.bbcode_enabled = true; _body.fit_content = true; _body.custom_minimum_size.y = 420; detail.add_child(_body)
+	_body.bbcode_enabled = true; _body.fit_content = true; _body.custom_minimum_size.y = 220; detail.add_child(_body)
 	_empty.text = "No matching entries\nTry a material, component, process or physical property."; _empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; _empty.theme_type_variation = "SecondaryLabel"; _empty.visible = false; detail.add_child(_empty)
 	var related_title := Label.new(); related_title.text = "RELATED"; related_title.theme_type_variation = "SectionTitleLabel"; detail.add_child(related_title)
 	detail.add_child(_related)

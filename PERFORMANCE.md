@@ -826,3 +826,30 @@ Same host, renderer and strictly `Dummy` audio. Phase 13.9 adds UI guidance only
 All four representative fixtures exceed `100 FPS`. Dense Synthetic remains a disclosed out-of-scope stress bound with `15,600` structure tiles and `169,351` active-region cells.
 
 The required representative smoke ran Factory Mode for `599.983 s`, rendered `200,150` frames, completed `36,020` ticks and exited `0`: `333.6 FPS`, `2.998 ms` frame average, `3.333 ms` p95/p99, `16.664 ms` worst frame and `5.606 ms` worst simulation tick.
+
+## Phase 13.9B final responsive-UI gate — 2026-08-30
+
+Same Windows host, Godot `4.7.1.stable.official.a13da4feb`, GL Compatibility at `1920×1080`, and strictly muted automated audio.
+
+| Representative runtime | FPS | Frame average | Frame p95 | Frame p99 | UI average |
+|---|---:|---:|---:|---:|---:|
+| Character | `308.6` | `3.235 ms` | `3.695 ms` | `4.868 ms` | `0.0086 ms` |
+| Factory | `477.0` | `2.094 ms` | `2.381 ms` | `2.381 ms` | `0.0083 ms` |
+| Creative | `414.5` | `2.409 ms` | `2.778 ms` | `2.778 ms` | `0.0091 ms` |
+| Realistic Maximum Factory | `179.1` | `5.579 ms` | `6.061 ms` | `8.947 ms` | `0.0094 ms` |
+| Dense Synthetic Megafactory | `42.2` | `23.699 ms` | `26.389 ms` | `28.663 ms` | `0.0098 ms` |
+
+| Player UI surface | FPS | Frame average | Frame p95 | UI average |
+|---|---:|---:|---:|---:|
+| Build Catalog | `238.0` | `4.195 ms` | `4.545 ms` | `0.0091 ms` |
+| Research | `259.8` | `3.846 ms` | `5.000 ms` | `0.0129 ms` |
+| Codex | `515.1` | `1.938 ms` | `2.083 ms` | `0.0086 ms` |
+| Inspector | `550.4` | `1.814 ms` | `2.083 ms` | `0.0092 ms` |
+| Map | `320.8` | `3.113 ms` | `3.333 ms` | `0.0092 ms` |
+| Production Overlay | `271.7` | `3.677 ms` | `4.167 ms` | `0.0091 ms` |
+
+All four representative fixtures exceed the hard `100 FPS` owner-playtest gate. The UI remains event/layout driven; no per-frame full-tree overlap scan was added. Dense Synthetic remains the separately disclosed pathological rendered ceiling.
+
+The final Factory stability run exited `0` after `600.006 s`, `36,020` ticks and `282,380` frames: `470.6 FPS`, `2.125 ms` frame average, `2.381 ms` p95/p99, `19.987 ms` worst frame and `0.864 ms` worst simulation tick. The clean-profile functional smoke additionally passed Character creation, Build, Save/Exit/Continue, Codex, Settings, Planning Pause, Factory, Creative and local Diagnostics.
+
+The full historical benchmark script is not entirely green after a clean source build. The isolated Phase 3 50k-active Conveyor stress reproducibly measures `17.096 ms/tick` against its `16.67 ms` invariant. The isolated Phase 7 one-million-active Sand stress reproducibly measures `44.0126 ms/tick` at eight workers against the same invariant. Neither test loads the Phase 13.9B UI code, while representative runtime and UI measurements above pass with substantial margin. Both failures remain explicit optimization debt rather than being relabeled as passes.

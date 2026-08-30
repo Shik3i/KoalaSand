@@ -1,6 +1,8 @@
 # KoalaSand Documentation Index
 
-Current documents describe `0.1.0-playtest.4`. Historical entries preserve the architecture decision at that phase and are not current feature limits.
+Current documents describe `0.1.0-playtest.5`. Historical entries preserve the architecture decision at that phase and are not current feature limits.
+
+- [Phase 13.9B responsive UI rebuild](../PHASE139B_UI_REBUILD.md)
 
 ## Start here
 

@@ -2,8 +2,8 @@
 
 ## Current baseline
 
-- Version: `0.1.0-playtest.4`.
-- Scope: Phase 13 MVP through Phase 13.9 first-time-player experience and UX coverage.
+- Version: `0.1.0-playtest.5`.
+- Scope: Phase 13 MVP through Phase 13.9B responsive player-UI rebuild and first-time-player coverage.
 - Branch: `main`.
 - Engine: `Godot 4.7.1.stable.official.a13da4feb`; repository wrapper required.
 - Native: C++20 GDExtension, pinned `godot-cpp` commit `5ed72a0dc2517a8082598a950895c6b24e8aa282`.
@@ -52,6 +52,16 @@ Phase 13.8 retains the reviewed Phase 13.7 Git baseline and prepares a new owner
 - Live Controls help, onboarding settings, mode explanations, Research legend/unlock feedback, Blueprint annotations and actionable empty states.
 - Automated clean-state FTUE coverage plus sequential silent capture and packaged-profile gates.
 - Final verification: `27/27` correctness scripts, `329` focused FTUE checks, `148` audited surfaces, `30` final captures and a `599.983 s` representative smoke.
+
+## Phase 13.9B responsive UI rebuild
+
+- Container-driven top safe rail, coherent responsive bottom dock and a central workspace rectangle replace independent absolute HUD strips.
+- Dedicated Catalog card icon/name/category/badge regions remove the captured icon/text collision; two-to-four columns respond to viewport and UI scale.
+- Named Glass/Iron/Gold Research resources, grouped primary/secondary navigation and a compact expandable Goal establish the gameplay hierarchy.
+- Tooltip placement uses actual minimum size plus target, viewport, safe-region and modal avoidance. Guided messages attach to live Controls, respect safe regions and queue.
+- Research, Codex, Map, Blueprints and Experiments share the workspace and replace one another; the 1600×900/150% Research footer stays above the Bottom HUD.
+- Permanent layout regression coverage runs nine resolution/scale combinations and the exact dense Catalog + tooltip + full HUD failure state.
+- Final verification: `28/28` correctness scripts, `237` responsive-layout checks, `30` final captures, `3` reviewed contact sheets, all four representative runtime modes above `100 FPS`, and a `600.006 s` representative smoke.
 
 ## Verification commands
 

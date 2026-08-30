@@ -20,6 +20,10 @@ var _codex_button: Button
 var _codex_id := ""
 var _panel_hovered := false
 var _hide_generation := 0
+var _reserved_regions: Array[Rect2] = []
+var _modal_regions: Array[Rect2] = []
+var _current_target_rect := Rect2()
+var _requested_size := Vector2(360, 180)
 
 
 func _ready() -> void:
@@ -78,15 +82,19 @@ func visible_text() -> String:
 	return "\n".join(lines)
 
 
-static func clamped_position(target_rect: Rect2, tooltip_size: Vector2, viewport_size: Vector2) -> Vector2:
-	var margin := 12.0
-	var result := Vector2(target_rect.position.x, target_rect.end.y + margin)
-	if result.y + tooltip_size.y > viewport_size.y - margin:
-		result.y = target_rect.position.y - tooltip_size.y - margin
-	if result.y < margin:
-		result.y = clampf(target_rect.get_center().y - tooltip_size.y * 0.5, margin, maxf(margin, viewport_size.y - tooltip_size.y - margin))
-	result.x = clampf(result.x, margin, maxf(margin, viewport_size.x - tooltip_size.x - margin))
-	return result
+static func clamped_position(target_rect: Rect2, tooltip_size: Vector2, viewport_size: Vector2, reserved_regions: Array[Rect2] = [], modal_regions: Array[Rect2] = []) -> Vector2:
+	return UILayoutPolicy.best_tooltip_rect(target_rect, tooltip_size, viewport_size, reserved_regions, modal_regions).position
+
+
+func set_safe_regions(reserved_regions: Array[Rect2], modal_regions: Array[Rect2] = []) -> void:
+	_reserved_regions = reserved_regions.duplicate()
+	_modal_regions = modal_regions.duplicate()
+	if _panel != null and _panel.visible:
+		call_deferred("_reposition_visible")
+
+
+func visible_rect() -> Rect2:
+	return _panel.get_global_rect() if _panel != null and _panel.visible else Rect2()
 
 
 func _process(_delta: float) -> void:
@@ -110,6 +118,7 @@ func _build_panel() -> void:
 	_panel.add_child(column)
 	_title = Label.new(); _title.theme_type_variation = "SectionTitleLabel"; column.add_child(_title)
 	_description = Label.new(); _description.custom_minimum_size.x = 300; column.add_child(_description)
+	_description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_state = Label.new(); _state.theme_type_variation = "SecondaryLabel"; column.add_child(_state)
 	_disabled_reason = Label.new(); _disabled_reason.theme_type_variation = "WarningLabel"; column.add_child(_disabled_reason)
 	_shortcut = Label.new(); _shortcut.theme_type_variation = "CaptionLabel"; column.add_child(_shortcut)
@@ -138,9 +147,23 @@ func _show(spec: Dictionary, target_rect: Rect2) -> void:
 	for label: Label in [_state, _disabled_reason, _shortcut, _secondary]:
 		if label.visible: content_height += 24.0 + floorf(float(label.text.length()) / 50.0) * 16.0
 	if _codex_button.visible: content_height += 42.0
-	var tooltip_size := Vector2(360.0, clampf(content_height, 132.0, 292.0))
-	_panel.size = tooltip_size
-	_panel.position = clamped_position(target_rect, tooltip_size, get_viewport_rect().size)
+	var ui_scale := clampf(float(get_theme_font_size("font_size", "Label")) / 14.0, 0.75, 2.0)
+	var viewport_size := get_viewport_rect().size
+	_requested_size = Vector2(minf(MAX_WIDTH, viewport_size.x * 0.36), clampf(content_height * ui_scale, 132.0 * ui_scale, 292.0 * ui_scale))
+	_current_target_rect = target_rect
+	_panel.size = _requested_size
+	call_deferred("_reposition_visible")
+
+
+func _reposition_visible() -> void:
+	if _panel == null or not _panel.visible:
+		return
+	var actual_size := _panel.get_combined_minimum_size().max(_requested_size)
+	var viewport_size := get_viewport_rect().size
+	actual_size.x = minf(actual_size.x, viewport_size.x - UILayoutPolicy.VIEWPORT_MARGIN * 2.0)
+	actual_size.y = minf(actual_size.y, viewport_size.y - UILayoutPolicy.VIEWPORT_MARGIN * 2.0)
+	_panel.size = actual_size
+	_panel.position = clamped_position(_current_target_rect, actual_size, viewport_size, _reserved_regions, _modal_regions)
 
 
 func _set_optional(label: Label, value: String) -> void:
