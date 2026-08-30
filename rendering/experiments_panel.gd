@@ -1,6 +1,8 @@
 class_name ExperimentsPanel
 extends PanelContainer
 
+signal closed
+
 var tracker: ExperimentTracker
 var _list := VBoxContainer.new()
 
@@ -17,22 +19,35 @@ func _ready() -> void:
 	var column := VBoxContainer.new(); margin.add_child(column)
 	var row := HBoxContainer.new(); column.add_child(row)
 	var title := Label.new(); title.text = "Experiments"; title.theme_type_variation = "ScreenTitleLabel"; title.size_flags_horizontal = Control.SIZE_EXPAND_FILL; row.add_child(title)
-	var close_button := Button.new(); close_button.theme_type_variation = "QuietButton"; close_button.text = "Close"; close_button.pressed.connect(func(): visible = false); row.add_child(close_button)
+	var close_button := Button.new(); close_button.theme_type_variation = "QuietButton"; close_button.text = "Close  [Esc]"; close_button.pressed.connect(close); row.add_child(close_button)
 	var note := Label.new(); note.text = "Ideas for discovering how the physical world behaves."; note.theme_type_variation = "SecondaryLabel"; column.add_child(note)
 	var scroll := ScrollContainer.new(); scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL; column.add_child(scroll)
+	_list.custom_minimum_size.x = 390
+	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_list.add_theme_constant_override("separation", 10)
 	scroll.add_child(_list)
 
 func initialize(value: ExperimentTracker) -> void:
 	tracker = value
 	refresh()
 
+func open() -> void:
+	refresh()
+	KoalaSandTheme.show_panel(self, true)
+
+func close() -> void:
+	KoalaSandTheme.hide_panel(self, func() -> void: closed.emit())
+
 func refresh() -> void:
 	if tracker == null: return
 	for child in _list.get_children(): child.queue_free()
 	for definition: Dictionary in ExperimentTracker.DEFINITIONS:
 		var complete := bool(tracker.completed.get(str(definition.id), false))
+		var card := PanelContainer.new()
+		card.theme_type_variation = "HudPanel"
 		var label := Label.new()
-		label.text = "%s  %s\n     %s" % ["✓" if complete else "○", str(definition.title), str(definition.description)]
+		label.text = "%s  %s\n%s" % ["COMPLETE" if complete else "TRY THIS", str(definition.title), str(definition.description)]
 		label.add_theme_color_override("font_color", KoalaSandTheme.COLOR_SUCCESS if complete else KoalaSandTheme.COLOR_TEXT_SECONDARY)
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		_list.add_child(label)
+		card.add_child(label)
+		_list.add_child(card)

@@ -63,6 +63,7 @@ var _last_painted_cell := Vector2i.ZERO
 var _capture_path: String = ""
 var _capture_tick: int = -1
 var _capture_queued: bool = false
+var _simulation_workers := -1
 var _simulation_latest_ms := 0.0
 var _simulation_total_ms := 0.0
 var _simulation_worst_ms := 0.0
@@ -186,7 +187,8 @@ func _ready() -> void:
 	world = NativeSandWorld.new()
 	# Eight simulation workers leave main/render-thread headroom on desktop while
 	# preserving the single-thread fallback selected by NativeSandWorld on Web.
-	world.reset(_world_seed, clampi(OS.get_processor_count() - 1, 1, 8))
+	var simulation_workers := clampi(OS.get_processor_count() - 1, 1, 8) if _simulation_workers < 1 else _simulation_workers
+	world.reset(_world_seed, simulation_workers)
 	_configure_procedural_world()
 	if _validate_seeds > 0:
 		var validation_report: Dictionary = world.validate_world_seeds(_validate_seed_start, _validate_seeds)
@@ -406,6 +408,15 @@ func _handle_key(event: InputEventKey) -> void:
 	if event.is_action_pressed(&"cancel"):
 		if _pause_menu != null and _pause_menu.visible:
 			_resume_from_pause()
+			return
+		if _codex_panel != null and _codex_panel.visible:
+			_codex_panel.close()
+			return
+		if _experiments_panel != null and _experiments_panel.visible:
+			_toggle_experiments()
+			return
+		if _blueprint_panel != null and _blueprint_panel.visible:
+			_toggle_blueprint_library()
 			return
 		if _blueprint_selection_active:
 			_cancel_blueprint_selection()
@@ -1298,7 +1309,9 @@ func _toggle_world_map() -> void:
 		)
 		_world_map_panel.initialize(world, _game_session.preset_id)
 		_world_map_panel.visible = false
-	_world_map_panel.visible = not _world_map_panel.visible
+		_world_map_panel.closed.connect(func() -> void: factory_hud.set_external_modal("map", false))
+	if _world_map_panel.visible: _world_map_panel.close()
+	else: _world_map_panel.open()
 	factory_hud.set_external_modal("map", _world_map_panel.visible)
 	if _world_map_panel.visible:
 		_world_map_panel.refresh(_expanded_chunk_rect(_visible_chunk_rect, 1))
@@ -1739,13 +1752,16 @@ func _configure_phase136_capture_source() -> void:
 		"character-factory", "full-game-character": _phase11_view = "character-normal"
 		"factory-start", "quickbar": _phase11_view = "factory-normal"
 		"factory-midgame", "full-game-factory", "production-flow": _phase11_view = "full-game"
-		"factory-powered", "inspector-power", "power-overlay": _phase10_view = "first-grid"
+		"factory-powered": _phase10_view = "factory"
+		"inspector-power": _phase10_view = "first-grid"
+		"power-overlay": _phase10_view = "power-factory-wide"
 		"creative": _phase11_view = "creative-normal"
 		"build-catalog": _phase11_view = "build-catalog"
 		"build-ghosts", "component-world": _phase13_view = "components"
 		"research": _phase11_view = "research"
 		"codex-material", "codex-component": _phase13_view = "full-game"
 		"inspector-screen": _phase13_view = "screen"
+		"inspector-sluice", "wet-separation": _phase13_view = "wet-sluice"
 		"inspector-furnace", "physical-furnace": _phase13_view = "furnace"
 		"blueprints", "custom-blueprint", "current-goal", "experiments", "planning-pause", "pause-menu", "settings": _phase13_view = "full-game"
 		"map-character": _phase11_view = "character-stale-map"
@@ -1754,7 +1770,7 @@ func _configure_phase136_capture_source() -> void:
 		"tree-world": _phase12_view = "tree-falling"
 		"fire": _phase12_view = "wood-burning"
 		"water": _phase7_view = "waterfall"
-		"steam": _phase9_view = "steam-render"
+		"steam": _phase9_view = "steam-cycle"
 		"wet-separation": _phase13_view = "wet-sluice"
 		"diagnostics": _phase11_view = "diagnostics"
 		"full-game-megafactory": _realistic_max_factory_benchmark = true
@@ -1806,9 +1822,9 @@ func _configure_phase136_view() -> void:
 	if _phase136_view.is_empty():
 		return
 	match _phase136_view:
-		"main-menu", "new-game":
+		"new-game":
 			if _new_game_screen != null: _new_game_screen.set_saved_worlds([])
-		"main-menu-continue", "save-browser":
+		"main-menu", "main-menu-continue", "save-browser":
 			if _new_game_screen != null: _new_game_screen.set_saved_worlds(_phase136_saved_worlds())
 		"mode-factory":
 			if _new_game_screen != null: _new_game_screen.select_preset(GameModeCapabilities.Preset.FACTORY)
@@ -1818,9 +1834,12 @@ func _configure_phase136_view() -> void:
 			if _new_game_screen != null: _new_game_screen.select_preset(GameModeCapabilities.Preset.CREATIVE)
 		"character-spawn", "character-exploration", "character-jetpack", "character-hover-build", "character-factory", "full-game-character":
 			_set_camera_zoom_index(6)
+		"build-ghosts", "component-world":
+			_set_camera_zoom_index(7)
 		"codex-material": _open_codex("material:raw_sand")
 		"codex-component": _open_codex("component:41")
 		"inspector-screen": _phase135_capture_inspector = PhysicalInspector.inspect(world, materials, Vector2i(-2, 16))
+		"inspector-sluice": _phase135_capture_inspector = PhysicalInspector.inspect(world, materials, Vector2i(-2, 15))
 		"inspector-furnace": _phase135_capture_inspector = PhysicalInspector.inspect(world, materials, Vector2i(-5, 15))
 		"inspector-power": _phase135_capture_inspector = PhysicalInspector.inspect(world, materials, Vector2i(-43, -2))
 		"build-ghosts":
@@ -2114,7 +2133,9 @@ func _create_phase135_player_ui() -> void:
 	_codex_panel = CodexPanel.new(); _codex_panel.name = "PhysicsCodex"; $HUD.add_child(_codex_panel); _codex_panel.initialize(_physics_codex)
 	_codex_panel.closed.connect(func(): factory_hud.set_external_modal("codex", false))
 	_experiments_panel = ExperimentsPanel.new(); _experiments_panel.name = "Experiments"; $HUD.add_child(_experiments_panel); _experiments_panel.initialize(_experiment_tracker)
+	_experiments_panel.closed.connect(func(): factory_hud.set_external_modal("experiments", false))
 	_blueprint_panel = BlueprintLibraryPanel.new(); _blueprint_panel.name = "BlueprintLibrary"; $HUD.add_child(_blueprint_panel); _blueprint_panel.initialize(_blueprints)
+	_blueprint_panel.closed.connect(func(): factory_hud.set_external_modal("blueprints", false))
 	_blueprint_panel.blueprint_selected.connect(_select_library_blueprint)
 	_blueprint_panel.save_clipboard_requested.connect(_save_clipboard_blueprint)
 	_audio_mixer = AudioEventMixer.new(); _audio_mixer.name = "CentralAudioMixer"; add_child(_audio_mixer)
@@ -2170,14 +2191,14 @@ func _open_codex(entry_id := "") -> void:
 
 func _toggle_experiments() -> void:
 	if _experiments_panel == null: return
-	_experiments_panel.visible = not _experiments_panel.visible
-	if _experiments_panel.visible: _experiments_panel.refresh()
+	if _experiments_panel.visible: _experiments_panel.close()
+	else: _experiments_panel.open()
 	factory_hud.set_external_modal("experiments", _experiments_panel.visible)
 
 func _toggle_blueprint_library() -> void:
 	if _blueprint_panel == null: return
-	_blueprint_panel.visible = not _blueprint_panel.visible
-	if _blueprint_panel.visible: _blueprint_panel.refresh()
+	if _blueprint_panel.visible: _blueprint_panel.close()
+	else: _blueprint_panel.open()
 	factory_hud.set_external_modal("blueprints", _blueprint_panel.visible)
 
 func _select_library_blueprint(blueprint: BlueprintDefinition) -> void:
@@ -2274,6 +2295,7 @@ func _open_pause_menu() -> void:
 
 func _resume_from_pause() -> void:
 	_pause_menu.close()
+	KoalaSandTheme.apply_preferences($HUD, float(_pause_menu.settings().get("ui_scale", 1.0)), bool(_pause_menu.settings().get("reduced_motion", false)))
 	clock.set_paused(_pause_menu_was_planning)
 	if _character != null: _character.set_simulation_paused(_pause_menu_was_planning)
 	if _audio_mixer != null:
@@ -2341,6 +2363,7 @@ func _continue_world(saved_world_name: String) -> void:
 		factory_hud.deserialize_session_state(context.hud)
 	if context.get("settings", null) is Dictionary:
 		_pause_menu.apply_settings(context.settings)
+		KoalaSandTheme.apply_preferences($HUD, float(context.settings.get("ui_scale", 1.0)), bool(context.settings.get("reduced_motion", false)))
 	camera.position = context.get("camera_position", camera.position)
 	zoom_index = clampi(int(context.get("zoom_index", zoom_index)), 0, ZOOM_LEVELS.size() - 1)
 	_set_camera_zoom_index(zoom_index)
@@ -3625,6 +3648,8 @@ func _parse_capture_arguments() -> void:
 			camera.position.y = argument.trim_prefix("--capture-camera-y=").to_float() * renderer.cell_pixel_size
 		elif argument.begins_with("--benchmark-runtime-ticks="):
 			_runtime_benchmark_ticks = argument.trim_prefix("--benchmark-runtime-ticks=").to_int()
+		elif argument.begins_with("--simulation-workers="):
+			_simulation_workers = clampi(argument.trim_prefix("--simulation-workers=").to_int(), 1, 8)
 		elif argument == "--empty-world":
 			_showcase_enabled = false
 		elif argument.begins_with("--phase3-view="):

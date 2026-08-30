@@ -41,7 +41,7 @@ $Failures = @()
 foreach ($Benchmark in $Benchmarks) {
     $Resource = 'res://' + $Benchmark.Replace('\', '/')
     Write-Output "BENCHMARK_START $Resource"
-    $Output = @(& $Godot --headless --path $RepositoryRoot --script $Resource 2>&1)
+    $Output = @(& $Godot -MuteAudio --headless --path $RepositoryRoot --script $Resource 2>&1)
     $ExitCode = $LASTEXITCODE
     $Output | ForEach-Object { Write-Output $_ }
     $Text = $Output -join "`n"
@@ -53,7 +53,7 @@ foreach ($Benchmark in $Benchmarks) {
 foreach ($Benchmark in $RenderedBenchmarks) {
     $Resource = 'res://' + $Benchmark.Replace('\', '/')
     Write-Output "RENDER_BENCHMARK_START $Resource"
-    $Output = @(& $Godot --path $RepositoryRoot --script $Resource 2>&1)
+    $Output = @(& $Godot -MuteAudio --path $RepositoryRoot --script $Resource 2>&1)
     $ExitCode = $LASTEXITCODE
     $Output | ForEach-Object { Write-Output $_ }
     $Text = $Output -join "`n"
@@ -72,7 +72,7 @@ if ($IncludeRuntime) {
     )
     foreach ($Case in $RuntimeCases) {
         Write-Output "RUNTIME_BENCHMARK_START $($Case -join ' ')"
-        & $Godot --path $RepositoryRoot --user-args @Case --benchmark-runtime-ticks=300 --capture-1080p
+        & $Godot -MuteAudio --path $RepositoryRoot --user-args @Case --benchmark-runtime-ticks=300 --capture-1080p
         if ($LASTEXITCODE -ne 0) { $Failures += "runtime $($Case -join ' ') exit=$LASTEXITCODE" }
     }
 }

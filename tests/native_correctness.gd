@@ -26,6 +26,7 @@ func _run() -> void:
 	for fixture_name in FIXTURES:
 		_compare_fixture(fixture_name)
 	_compare_worker_counts()
+	_parallel_reactive_commit_stress()
 	if _failures == 0:
 		print("PASS: native Phase-7 canonical goldens and worker-count determinism")
 	quit(0 if _failures == 0 else 1)
@@ -72,6 +73,37 @@ func _compare_worker_counts() -> void:
 	print("determinism workers=%s ticks=120 hash=%s" % [
 		worker_counts, worlds[0].material_state_hash()
 	])
+
+
+func _parallel_reactive_commit_stress() -> void:
+	# Regression for Phase 13.8: loose organic cells used to mutate the shared
+	# native reactive-cell hash set from multiple simulation workers.
+	var world := NativeSandWorld.new()
+	world.reset(13808, mini(8, OS.get_processor_count()))
+	world.set_game_mode(1)
+	var expected_cells := 0
+	var origins: Array[int] = []
+	for group in 12:
+		var origin_x := group * 192
+		origins.append(origin_x)
+		for x in range(origin_x - 10, origin_x + 11): world.set_cell(Vector2i(x, 20), 1)
+		for y in range(10, 20):
+			world.set_material_state(Vector2i(origin_x, y), 21, 255, 1173)
+			expected_cells += 1
+		for leaf in [Vector2i(-1, 10), Vector2i(1, 10), Vector2i(-1, 11), Vector2i(1, 11)]:
+			world.set_material_state(Vector2i(origin_x, 0) + leaf, 22, 255, 1173)
+			expected_cells += 1
+		_check(bool(world.character_cut_cell(Vector2i(origin_x, 19)).get("accepted", false)), "parallel reactive fixture tree cut accepted group=%d" % group)
+	for _tick in 90: world.step()
+	for origin_x in origins:
+		for x in range(origin_x - 10, origin_x + 11): world.set_cell(Vector2i(x, 20), 0)
+	for _tick in 180: world.step()
+	var actual_cells := 0
+	var cells: PackedInt32Array = world.get_non_empty_cells()
+	for index in range(0, cells.size(), 3):
+		if cells[index + 2] in [21, 22]: actual_cells += 1
+	_check_equal(actual_cells, expected_cells, "parallel reactive-cell commit preserves loose organic matter")
+	print("parallel_reactive_commit workers=%d groups=12 ticks=270 cells=%d" % [world.get_worker_count(), actual_cells])
 
 
 func _reference_cells(world: CellWorld) -> PackedInt32Array:

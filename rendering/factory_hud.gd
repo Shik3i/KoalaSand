@@ -88,6 +88,7 @@ func activate_slot(number: int) -> void:
 func toggle_catalog() -> void:
 	_catalog.visible = not _catalog.visible
 	if _catalog.visible:
+		KoalaSandTheme.animate_in(_catalog)
 		_ui_state.open_modal("build_catalog")
 		_search.grab_focus()
 	else:
@@ -105,6 +106,7 @@ func change_page(delta: int) -> void:
 func toggle_statistics() -> void:
 	_statistics_panel.visible = not _statistics_panel.visible
 	if _statistics_panel.visible:
+		KoalaSandTheme.animate_in(_statistics_panel)
 		_ui_state.open_modal("statistics")
 		_refresh_statistics()
 	else:
@@ -149,12 +151,16 @@ func show_context_hint(id: String, message: String) -> void:
 
 
 func show_inspector(title: String, lines: Array[String]) -> void:
+	var was_hidden := not _inspector.visible
 	_inspector.visible = not title.is_empty()
+	if was_hidden and _inspector.visible: KoalaSandTheme.animate_in(_inspector)
 	_inspector_text.text = "" if title.is_empty() else "%s\n\n%s" % [title.to_upper(), "\n".join(lines)]
 
 func show_physical_inspector(result: Dictionary) -> void:
 	var title := str(result.get("title", ""))
+	var was_hidden := not _inspector.visible
 	_inspector.visible = not title.is_empty()
+	if was_hidden and _inspector.visible: KoalaSandTheme.animate_in(_inspector)
 	var lines: Array[String] = []
 	var causes: Array = result.get("causes", [])
 	if not causes.is_empty():

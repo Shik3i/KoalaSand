@@ -1,32 +1,52 @@
 class_name ProceduralSfx
 extends RefCounted
 
-const SAMPLE_RATE := 22050
+const SAMPLE_RATE := 32000
+const LOOP_DURATION := 1.2
 
 static func build(event_id: StringName, looped := false) -> AudioStreamWAV:
-	var duration := 0.72 if looped else 0.13
+	var duration := LOOP_DURATION if looped else 0.16
 	if event_id in [&"tree_crack", &"tree_impact", &"milestone_complete"]: duration = 0.34
 	var count := maxi(64, roundi(SAMPLE_RATE * duration))
-	var bytes := PackedByteArray(); bytes.resize(count)
-	var seed := _stable_seed(str(event_id)); var frequency := 105.0 + float(seed % 360); var noise_mix := 0.08 + float((seed >> 8) % 18) / 100.0
-	if event_id in [&"water", &"steam", &"fire", &"sand", &"conveyor", &"pump", &"vibration", &"turbine", &"generator", &"jetpack"]: noise_mix = 0.32
+	var bytes := PackedByteArray(); bytes.resize(count * 2)
+	var seed := _stable_seed(str(event_id)); var frequency := 105.0 + float(seed % 360); var texture_mix := 0.035 + float((seed >> 8) % 7) / 100.0
+	if event_id in [&"water", &"steam", &"fire", &"sand", &"conveyor", &"pump", &"vibration", &"turbine", &"generator", &"jetpack"]: texture_mix = 0.12
 	if event_id in [&"tree_impact", &"dig", &"remove"]: frequency *= 0.45
 	if event_id in [&"confirm", &"research_unlock", &"milestone_complete"]: frequency *= 1.65
+	var phase := 0.0
+	var filtered_noise := 0.0
+	var loop_cycles := maxi(1, roundi(frequency * duration))
 	for index in count:
 		var t := float(index) / SAMPLE_RATE
-		var drift := 1.0 + 0.018 * sin(TAU * 2.1 * t + float(seed % 13))
-		var phase := TAU * frequency * drift * t
-		var pulse := 0.68 + 0.32 * sin(TAU * (3.0 + float(seed % 5)) * t)
-		var tone := sin(phase) * 0.50 + sin(phase * 0.503 + 0.7) * 0.19 + sin(phase * 1.997) * 0.08
-		var noise := float((_hash_sample(seed, index) & 65535) - 32768) / 32768.0
-		var envelope := (0.50 + pulse * 0.18) if looped else minf(1.0, t * 160.0) * pow(maxf(0.0, 1.0 - t / duration), 2.0)
-		var texture := noise
-		if event_id == &"water": texture = noise * (0.55 + 0.45 * sin(TAU * 7.0 * t))
-		elif event_id == &"fire": texture = noise * (0.45 + 0.55 * abs(sin(TAU * 11.0 * t + sin(t * 19.0))))
-		elif event_id == &"steam": texture = noise * (0.35 + 0.65 * t / duration)
-		var sample := clampf((tone * (1.0 - noise_mix) + texture * noise_mix) * envelope, -1.0, 1.0)
-		bytes[index] = clampi(roundi(sample * 110.0 + 128.0), 0, 255)
-	var stream := AudioStreamWAV.new(); stream.format = AudioStreamWAV.FORMAT_8_BITS; stream.mix_rate = SAMPLE_RATE; stream.stereo = false; stream.data = bytes
+		var unit := float(index) / float(count)
+		var tone := 0.0
+		var texture := 0.0
+		var envelope := 0.0
+		if looped:
+			# Integer-cycle partials and periodic texture make the final-to-first
+			# transition continuous. Never put raw white noise in a short loop.
+			var loop_phase := TAU * float(loop_cycles) * unit
+			tone = sin(loop_phase) * 0.56 + sin(loop_phase * 2.0 + 0.7) * 0.12
+			var texture_cycles := 3 + seed % 5
+			texture = sin(TAU * float(texture_cycles) * unit + float(seed % 17)) * 0.62
+			texture += sin(TAU * float(texture_cycles * 2) * unit + 1.3) * 0.24
+			envelope = 0.22
+		else:
+			var raw_noise := float((_hash_sample(seed, index) & 65535) - 32768) / 32768.0
+			filtered_noise = lerpf(filtered_noise, raw_noise, 0.075)
+			var drift := 1.0 + 0.012 * sin(TAU * 2.1 * t + float(seed % 13))
+			phase += TAU * frequency * drift / SAMPLE_RATE
+			tone = sin(phase) * 0.58 + sin(phase * 1.997) * 0.10
+			texture = filtered_noise
+			var attack := smoothstep(0.0, 0.012, t)
+			var release := smoothstep(0.0, 0.045, duration - t)
+			envelope = attack * release * 0.34
+		var sample := clampf((tone * (1.0 - texture_mix) + texture * texture_mix) * envelope, -0.72, 0.72)
+		var pcm := roundi(sample * 32767.0)
+		if pcm < 0: pcm += 65536
+		bytes[index * 2] = pcm & 0xff
+		bytes[index * 2 + 1] = (pcm >> 8) & 0xff
+	var stream := AudioStreamWAV.new(); stream.format = AudioStreamWAV.FORMAT_16_BITS; stream.mix_rate = SAMPLE_RATE; stream.stereo = false; stream.data = bytes
 	if looped: stream.loop_mode = AudioStreamWAV.LOOP_FORWARD; stream.loop_begin = 0; stream.loop_end = count
 	return stream
 

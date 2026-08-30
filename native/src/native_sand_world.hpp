@@ -1231,6 +1231,7 @@ private:
         int32_t worker_index = 0;
         int64_t enthalpy_rounding = 0;
         std::vector<Vector2i> changed_cells;
+        std::vector<Vector2i> reactive_cells_changed;
     };
 
     struct ThermalJobResult {

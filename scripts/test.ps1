@@ -31,7 +31,8 @@ $Tests = @(
     'tests/phase135_correctness.gd',
     'tests/phase135_save_abuse.gd',
     'tests/phase136_correctness.gd',
-    'tests/phase137_hardening.gd'
+    'tests/phase137_hardening.gd',
+    'tests/phase138_polish.gd'
 )
 if ($Quick) {
     $Tests = @('tests/test_runner.gd', 'tests/native_correctness.gd', 'tests/phase13_correctness.gd', 'tests/phase13_persistence.gd', 'tests/phase137_hardening.gd')
@@ -42,7 +43,7 @@ $Started = [System.Diagnostics.Stopwatch]::StartNew()
 foreach ($Test in $Tests) {
     $Resource = 'res://' + $Test.Replace('\', '/')
     Write-Output "TEST_START $Resource"
-    $Output = @(& $Godot --headless --path $RepositoryRoot --script $Resource 2>&1)
+    $Output = @(& $Godot -MuteAudio --headless --path $RepositoryRoot --script $Resource 2>&1)
     $ExitCode = $LASTEXITCODE
     $Output | ForEach-Object { Write-Output $_ }
     $Text = $Output -join "`n"

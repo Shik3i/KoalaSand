@@ -30,7 +30,7 @@ func open(current_world_name: String) -> void:
 	world_name = current_world_name
 	_name_input.text = current_world_name
 	visible = true
-	KoalaSandTheme.animate_in(get_child(1) as Control)
+	KoalaSandTheme.animate_in(get_child(1) as Control, _reduced_motion.button_pressed, true)
 
 
 func close() -> void:

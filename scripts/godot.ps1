@@ -1,6 +1,8 @@
 [CmdletBinding(PositionalBinding = $false)]
 param(
     [string] $GodotExecutable = $env:KOALASAND_GODOT,
+    [switch] $NativeBacktrace,
+    [switch] $MuteAudio,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]] $GodotArguments
 )
@@ -51,10 +53,33 @@ try {
         else {
             @()
         }
-        & $GodotExecutable @EngineArguments '--' @UserArguments
+        $AutomatedRun = $MuteAudio -or ($UserArguments | Where-Object {
+            $_ -match '^--(benchmark-|capture-|validate-seeds|owner-package-smoke|dense-|realistic-max)'
+        }).Count -gt 0
+        if ($AutomatedRun -and [Array]::IndexOf($EngineArguments, '--audio-driver') -lt 0) {
+            $EngineArguments = @($EngineArguments) + @('--audio-driver', 'Dummy')
+        }
+        [string[]] $LaunchArguments = @($EngineArguments) + @('--') + @($UserArguments)
     }
     else {
-        & $GodotExecutable @GodotArguments
+        [string[]] $LaunchArguments = @($GodotArguments)
+        if ($MuteAudio -and [Array]::IndexOf($LaunchArguments, '--audio-driver') -lt 0) {
+            $LaunchArguments = @($LaunchArguments) + @('--audio-driver', 'Dummy')
+        }
+    }
+    if ($NativeBacktrace) {
+        $Debugger = Get-Command gdb.exe -ErrorAction SilentlyContinue
+        if ($null -eq $Debugger) {
+            throw 'Native backtrace requested but gdb.exe was not found on PATH.'
+        }
+        $DebugExecutable = Join-Path (Split-Path -Parent $GodotExecutable) 'Godot_v4.7.1-stable_win64.exe'
+        if (-not (Test-Path -LiteralPath $DebugExecutable -PathType Leaf)) {
+            throw "Native backtrace target not found: $DebugExecutable"
+        }
+        & $Debugger.Source --batch -ex 'set pagination off' -ex run -ex 'thread apply all bt' --args $DebugExecutable @LaunchArguments
+    }
+    else {
+        & $GodotExecutable @LaunchArguments
     }
     $GodotExitCode = $LASTEXITCODE
 }

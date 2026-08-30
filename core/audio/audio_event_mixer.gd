@@ -5,6 +5,7 @@ const CATEGORIES := ["Master", "UI", "Character", "Environment", "Machines", "Mu
 const MAX_UI_VOICES := 6
 const MAX_WORLD_ONESHOTS := 12
 const MAX_AGGREGATED_LOOPS := 8
+const DEFAULT_BUS_DB := {"UI":-9.0, "Character":-10.0, "Environment":-14.0, "Machines":-16.0, "Music":-18.0}
 const EVENT_MATRIX := [
 	["hover", "UI", false, false, "pointer focus", 1, 1], ["click", "UI", false, false, "activation", 3, 2], ["confirm", "UI", false, false, "accepted action", 5, 2], ["cancel", "UI", false, false, "cancelled action", 4, 2], ["invalid", "UI", false, false, "rejection", 8, 2], ["place", "UI", false, false, "placed Components", 6, 3], ["remove", "UI", false, false, "removed Components", 6, 3], ["rotate", "UI", false, false, "orientation", 4, 2], ["undo", "UI", false, false, "history action", 6, 2], ["redo", "UI", false, false, "history action", 6, 2], ["research_unlock", "UI", false, false, "authoritative unlock", 9, 1], ["milestone_complete", "UI", false, false, "authoritative milestone", 10, 1], ["save_complete", "UI", false, false, "atomic save result", 8, 1], ["save_error", "UI", false, false, "save failure", 10, 1],
 	["dig", "Character", false, true, "removed material", 7, 4], ["cut", "Character", false, true, "Wood cut", 7, 4], ["tree_crack", "Environment", false, true, "fall progress", 8, 3], ["tree_impact", "Environment", false, true, "physical impact", 9, 3], ["jetpack", "Character", true, true, "actual thrust", 7, 1], ["hover_active", "Character", true, true, "actual Hover state", 5, 1], ["igniter", "Character", false, true, "accepted ignition", 7, 3], ["splash", "Environment", false, true, "Water contact", 5, 4],
@@ -60,20 +61,22 @@ func set_category_volumes(values: Dictionary) -> void:
 	for category in CATEGORIES:
 		var linear := clampf(float(values.get(category.to_lower(), values.get(category, 1.0))), 0.0, 1.0)
 		var index := AudioServer.get_bus_index(category)
-		if index >= 0: AudioServer.set_bus_volume_db(index, linear_to_db(maxf(linear, 0.0001)))
+		if index >= 0:
+			var headroom := 0.0 if category == "Master" else float(DEFAULT_BUS_DB.get(category, -12.0))
+			AudioServer.set_bus_volume_db(index, headroom + linear_to_db(maxf(linear, 0.0001)))
 
 func play_ui(event_id: StringName, intensity := 1.0) -> bool:
 	requested_voices += 1
 	for player in _ui_players:
 		if not player.playing:
-			_presentation_counter += 1; player.stream = _stream(event_id, false); player.volume_db = linear_to_db(clampf(intensity, 0.02, 1.0)) - 5.0; player.pitch_scale = _variation(event_id, _presentation_counter, 0.035); player.play(); actual_voices += 1; return true
+			_presentation_counter += 1; player.stream = _stream(event_id, false); player.volume_db = linear_to_db(clampf(intensity, 0.02, 1.0)) - 11.0; player.pitch_scale = _variation(event_id, _presentation_counter, 0.025); player.play(); actual_voices += 1; return true
 	dropped_low_priority += 1; return false
 
 func play_world(event_id: StringName, world_position: Vector2, intensity := 1.0, category := "Environment") -> bool:
 	requested_voices += 1
 	for player in _world_players:
 		if not player.playing:
-			_presentation_counter += 1; player.bus = category; player.position = world_position; player.stream = _stream(event_id, false); player.volume_db = linear_to_db(clampf(intensity, 0.02, 1.0)) - 4.0; player.pitch_scale = _variation(event_id, _presentation_counter, 0.075); player.play(); actual_voices += 1; return true
+			_presentation_counter += 1; player.bus = category; player.position = world_position; player.stream = _stream(event_id, false); player.volume_db = linear_to_db(clampf(intensity, 0.02, 1.0)) - 12.0; player.pitch_scale = _variation(event_id, _presentation_counter, 0.04); player.play(); actual_voices += 1; return true
 	dropped_low_priority += 1; return false
 
 func update_aggregated_loops(sources: Array[Dictionary], camera_position: Vector2, zoom: float) -> void:
@@ -91,11 +94,20 @@ func update_aggregated_loops(sources: Array[Dictionary], camera_position: Vector
 	var keep: Dictionary = {}; aggregated_loops = candidates.size(); actual_voices = 0
 	for index in candidates.size():
 		var item := candidates[index]; var player := _loop_players[index]; var key := str(item.key); keep[key] = true
-		player.bus = str(item.category); player.position = Vector2(item.position); player.volume_db = linear_to_db(maxf(0.001, float(item.intensity))) - 8.0 + (-24.0 if _planning_paused else 0.0); player.pitch_scale = clampf(0.78 + float(item.parameter) * 0.48, 0.62, 1.42)
-		if str(_loop_assignments.get(index, "")) != key or not player.playing: player.stream = _stream(StringName(item.event), true); player.play(); _loop_assignments[index] = key
+		var target_db := linear_to_db(maxf(0.001, float(item.intensity))) - 18.0 + (-24.0 if _planning_paused else 0.0)
+		var is_new := str(_loop_assignments.get(index, "")) != key or not player.playing
+		player.bus = str(item.category); player.position = Vector2(item.position); player.pitch_scale = clampf(0.90 + float(item.parameter) * 0.18, 0.84, 1.12)
+		if is_new:
+			player.volume_db = -60.0
+			player.stream = _stream(StringName(item.event), true)
+			player.play()
+			_loop_assignments[index] = key
+		player.volume_db = lerpf(player.volume_db, target_db, 0.18)
 		actual_voices += 1
 	for index in range(candidates.size(), _loop_players.size()):
-		if _loop_players[index].playing: _loop_players[index].stop()
+		# Muting a loop gradually avoids a discontinuity at the AudioServer mix
+		# boundary. The bounded pool may keep inaudible streams alive.
+		if _loop_players[index].playing: _loop_players[index].volume_db = lerpf(_loop_players[index].volume_db, -60.0, 0.24)
 		_loop_assignments.erase(index)
 	last_mix_ms = float(Time.get_ticks_usec() - started) / 1000.0
 
@@ -122,10 +134,9 @@ func _ensure_buses() -> void:
 		if AudioServer.get_bus_index(category) >= 0: continue
 		AudioServer.add_bus(); AudioServer.set_bus_name(AudioServer.bus_count - 1, category)
 		if category != "Master": AudioServer.set_bus_send(AudioServer.bus_count - 1, "Master")
-	var defaults := {"UI":-5.0, "Character":-2.5, "Environment":-7.0, "Machines":-9.0, "Music":-16.0}
-	for category: String in defaults:
+	for category: String in DEFAULT_BUS_DB:
 		var index := AudioServer.get_bus_index(category)
-		if index >= 0: AudioServer.set_bus_volume_db(index, float(defaults[category]))
+		if index >= 0: AudioServer.set_bus_volume_db(index, float(DEFAULT_BUS_DB[category]))
 
 func _variation(event_id: StringName, ordinal: int, amount: float) -> float:
 	var hash := int(str(event_id).hash()) ^ (ordinal * 1103515245)

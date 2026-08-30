@@ -2,6 +2,7 @@ class_name WorldMapPanel
 extends PanelContainer
 
 signal center_requested
+signal closed
 
 var world: Variant
 var preset_id := GameModeCapabilities.Preset.FACTORY
@@ -38,6 +39,11 @@ func _ready() -> void:
 	center_button.text = "Center view"
 	center_button.pressed.connect(func() -> void: center_requested.emit())
 	header.add_child(center_button)
+	var close_button := Button.new()
+	close_button.theme_type_variation = "QuietButton"
+	close_button.text = "Close  [M / Esc]"
+	close_button.pressed.connect(close)
+	header.add_child(close_button)
 	_map = TextureRect.new()
 	_map.custom_minimum_size = Vector2(820, 490)
 	_map.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -48,7 +54,12 @@ func _ready() -> void:
 	_legend.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_legend.theme_type_variation = "CaptionLabel"
 	column.add_child(_legend)
-	KoalaSandTheme.animate_in(self, false, true)
+
+func open() -> void:
+	KoalaSandTheme.show_panel(self, true)
+
+func close() -> void:
+	KoalaSandTheme.hide_panel(self, func() -> void: closed.emit())
 
 
 func initialize(next_world: Variant, next_preset: int) -> void:

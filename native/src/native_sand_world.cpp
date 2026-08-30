@@ -137,7 +137,7 @@ constexpr std::array<RgbaFloat, 4> RESIDUE_PALETTE{{{0.19f,0.15f,0.14f,1},{0.25f
 constexpr std::array<RgbaFloat, 4> COAL_CHUNK_PALETTE{{{0.06f,0.07f,0.08f,1},{0.10f,0.11f,0.12f,1},{0.035f,0.04f,0.05f,1},{0.15f,0.15f,0.16f,1}}};
 constexpr std::array<RgbaFloat, 4> ASH_PALETTE{{{0.48f,0.48f,0.47f,1},{0.58f,0.57f,0.54f,1},{0.38f,0.39f,0.40f,1},{0.66f,0.64f,0.60f,1}}};
 constexpr std::array<RgbaFloat, 4> ICE_PALETTE{{{0.66f,0.88f,0.96f,1},{0.80f,0.95f,1.0f,1},{0.48f,0.74f,0.88f,1},{0.91f,0.98f,1.0f,1}}};
-constexpr std::array<RgbaFloat, 4> STEAM_PALETTE{{{0.76f,0.82f,0.84f,0.56f},{0.90f,0.94f,0.95f,0.62f},{0.62f,0.69f,0.73f,0.48f},{1.0f,1.0f,1.0f,0.67f}}};
+constexpr std::array<RgbaFloat, 4> STEAM_PALETTE{{{0.76f,0.82f,0.84f,0.22f},{0.90f,0.94f,0.95f,0.28f},{0.62f,0.69f,0.73f,0.18f},{1.0f,1.0f,1.0f,0.31f}}};
 constexpr std::array<RgbaFloat, 4> MOLTEN_GLASS_PALETTE{{{1.0f,0.43f,0.06f,1},{1.0f,0.72f,0.14f,1},{0.86f,0.16f,0.025f,1},{1.0f,0.91f,0.38f,1}}};
 constexpr std::array<RgbaFloat, 4> MOLTEN_IRON_PALETTE{{{1.0f,0.24f,0.015f,1},{1.0f,0.58f,0.05f,1},{0.72f,0.055f,0.01f,1},{1.0f,0.86f,0.27f,1}}};
 constexpr std::array<RgbaFloat, 4> ROCK_DEBRIS_PALETTE{{{0.30f,0.34f,0.37f,1},{0.38f,0.41f,0.43f,1},{0.24f,0.28f,0.31f,1},{0.45f,0.43f,0.39f,1}}};
@@ -1188,6 +1188,10 @@ void NativeSandWorld::apply_matter_notifications(const std::vector<MatterJobResu
     bool changed = false;
     for (const MatterJobResult &result : results) {
         changed = changed || result.transfers > 0 || result.displaced > 0;
+        for (const Vector2i cell : result.reactive_cells_changed) {
+            reactive_cells_.erase(cell_key(cell));
+            activate_reactive_cell(cell);
+        }
         for (const Vector2i cell : result.changed_cells) {
             activate_belts_near(cell);
             activate_machines_at_port(cell);
@@ -1265,8 +1269,11 @@ bool NativeSandWorld::move_granular_fast(Chunk &source_chunk, int32_t source_ind
     if (source_chunk.organic_moisture != nullptr) (*source_chunk.organic_moisture)[source_index] = 0;
     if (source_chunk.reaction_progress != nullptr) (*source_chunk.reaction_progress)[source_index] = 0;
     if (source_chunk.reaction_state != nullptr) (*source_chunk.reaction_state)[source_index] = 0;
-    reactive_cells_.erase(cell_key(source));
-    if (is_combustible_material(source_material)) activate_reactive_cell(destination);
+    // reactive_cells_ is a shared unordered_set. Granular jobs run in parallel,
+    // so defer both cells to the serial barrier commit instead of mutating the
+    // container from worker threads.
+    result.reactive_cells_changed.push_back(source);
+    result.reactive_cells_changed.push_back(destination);
     ++source_chunk.revision;
     ++destination_chunk->revision;
     source_chunk.moved_this_tick = destination_chunk->moved_this_tick = true;

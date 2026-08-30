@@ -1,4 +1,4 @@
-# KoalaSand 0.1.0-playtest.2 — Manual Playtest Checklist
+# KoalaSand 0.1.0-playtest.3 — Manual Playtest Checklist
 
 Record mode, seed, resolution, UI scale, GPU and approximate session length.
 
@@ -49,6 +49,7 @@ Record mode, seed, resolution, UI scale, GPU and approximate session length.
 
 ## Audio
 
+- [ ] Start one game instance at low Windows volume before increasing Master volume.
 - [ ] UI, Dig/Cut/Jetpack/Hover, Water/Steam/Fire and core machine feedback are audible.
 - [ ] Planning Pause fades world loops while UI remains audible.
 - Did audio become repetitive or too dense when zoomed out?

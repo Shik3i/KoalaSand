@@ -32,8 +32,7 @@ func initialize(codex: PhysicsCodex) -> void:
 	_refresh_results("")
 
 func open_entry(id := "") -> void:
-	visible = true
-	KoalaSandTheme.animate_in(self)
+	KoalaSandTheme.show_panel(self, true)
 	if not id.is_empty():
 		_navigate(id, true)
 	elif _history_index < 0 and not _result_ids.is_empty():
@@ -41,8 +40,7 @@ func open_entry(id := "") -> void:
 	_search.grab_focus()
 
 func close() -> void:
-	visible = false
-	closed.emit()
+	KoalaSandTheme.hide_panel(self, func() -> void: closed.emit())
 
 func current_entry_id() -> String:
 	return _history[_history_index] if _history_index >= 0 else ""

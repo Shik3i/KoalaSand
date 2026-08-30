@@ -2,14 +2,14 @@
 
 ## Current baseline
 
-- Version: `0.1.0-playtest.2`.
-- Scope: Phase 13 MVP, Phase 13.5 playtest candidate, Phase 13.6 polish and Phase 13.7 repository/hardening gate.
+- Version: `0.1.0-playtest.3`.
+- Scope: Phase 13 MVP through Phase 13.8 final player-experience polish.
 - Branch: `main`.
 - Engine: `Godot 4.7.1.stable.official.a13da4feb`; repository wrapper required.
 - Native: C++20 GDExtension, pinned `godot-cpp` commit `5ed72a0dc2517a8082598a950895c6b24e8aa282`.
 - Distribution status: owner playtest candidate; no tag, GitHub Release or PR.
 
-Phase 13.7 converts the historically unborn repository into a reviewed Git baseline. The remote verification record is completed by the Phase 13.7 Git operation and its final report; the source document intentionally does not embed a self-referential commit SHA.
+Phase 13.8 retains the reviewed Phase 13.7 Git baseline and prepares a new owner-playtest package. The remote verification record is completed by the Phase 13.8 Git operation and its final report; this source document intentionally does not embed a self-referential commit SHA.
 
 ## Implemented
 
@@ -35,6 +35,15 @@ Phase 13.7 converts the historically unborn repository into a reviewed Git basel
 - Worker stop/join before world storage teardown or reconfiguration.
 - Adversarial save, command, Blueprint, coordinate, conservation, WorldGen and UI-state tests.
 
+## Phase 13.8 player-experience polish
+
+- Safe 16-bit procedural audio, seamless periodic loops, filtered one-shots, fixed bus headroom and smoothed loop gain/pitch.
+- Automated Godot runs are explicitly silent and captures remain strictly sequential.
+- Native parallel reactive-cell changes commit after the worker barrier, eliminating the reproduced eight-worker heap corruption.
+- Unified modal entrance/exit motion, Reduced Motion bypass, reliable `Esc` ordering and correct modal-lock release.
+- Visible Map close action, readable Experiments cards, improved Component/Power/Steam presentation and distinct Main Menu/New Game states.
+- Two complete visual passes, `43` final captures, UI/gameplay/world-physics contact sheets and `1600×900`/`2560×1440` verification.
+
 ## Verification commands
 
 ```powershell
@@ -57,4 +66,4 @@ Exact current measurements belong in [PERFORMANCE.md](PERFORMANCE.md); repositor
 
 ## Operational rule
 
-Never invoke Godot directly for this repository. Use `scripts/godot.ps1`; it pins 4.7.1 and isolates writable profile/log state under ignored local directories.
+Never invoke Godot directly for this repository. Use `scripts/godot.ps1`; it pins 4.7.1 and isolates writable profile/log state under ignored local directories. Use `-MuteAudio` for every automated invocation.

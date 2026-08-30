@@ -1,7 +1,7 @@
 class_name BuildInfo
 extends RefCounted
 
-const VERSION := "0.1.0-playtest.2"
+const VERSION := "0.1.0-playtest.3"
 const SAVE_SCHEMA := 1
 const GENERATION_VERSION := 2
 

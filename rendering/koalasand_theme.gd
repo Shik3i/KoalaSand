@@ -38,6 +38,8 @@ const MOTION_FAST := 0.08
 const MOTION_STANDARD := 0.12
 const MOTION_EMPHASIS := 0.18
 
+static var reduced_motion := false
+
 static func build(ui_scale := 1.0) -> Theme:
 	var scale := clampf(ui_scale, 0.75, 2.0)
 	var result := Theme.new()
@@ -104,15 +106,48 @@ static func build(ui_scale := 1.0) -> Theme:
 	return result
 
 static func animate_in(control: Control, reduced_motion := false, emphasis := false) -> void:
-	if reduced_motion:
+	if reduced_motion or KoalaSandTheme.reduced_motion:
 		control.modulate.a = 1.0
 		return
+	control.show()
 	control.modulate.a = 0.0
 	control.position.y += 6.0
 	var tween := control.create_tween().set_parallel(true)
 	tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tween.tween_property(control, "modulate:a", 1.0, MOTION_EMPHASIS if emphasis else MOTION_STANDARD)
 	tween.tween_property(control, "position:y", control.position.y - 6.0, MOTION_EMPHASIS if emphasis else MOTION_STANDARD)
+
+static func show_panel(control: Control, emphasis := false) -> void:
+	control.show()
+	animate_in(control, false, emphasis)
+
+static func hide_panel(control: Control, finished := Callable()) -> void:
+	if KoalaSandTheme.reduced_motion:
+		control.hide()
+		if finished.is_valid():
+			finished.call()
+		return
+	var tween := control.create_tween().set_parallel(true)
+	tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tween.tween_property(control, "modulate:a", 0.0, MOTION_FAST)
+	tween.tween_property(control, "scale", Vector2(0.985, 0.985), MOTION_FAST)
+	tween.chain().tween_callback(func() -> void:
+		control.hide()
+		control.modulate.a = 1.0
+		control.scale = Vector2.ONE
+		if finished.is_valid(): finished.call()
+	)
+
+static func apply_preferences(root: Node, ui_scale: float, motion_reduced: bool) -> void:
+	KoalaSandTheme.reduced_motion = motion_reduced
+	var next_theme := build(ui_scale)
+	_apply_theme_recursive(root, next_theme)
+
+static func _apply_theme_recursive(node: Node, next_theme: Theme) -> void:
+	if node is Control and (node == node.get_tree().current_scene or (node as Control).theme != null):
+		(node as Control).theme = next_theme
+	for child in node.get_children():
+		_apply_theme_recursive(child, next_theme)
 
 static func _set_label(theme: Theme, variation: String, size: int, color: Color, scale: float) -> void:
 	theme.set_font_size("font_size", variation, roundi(size * scale))

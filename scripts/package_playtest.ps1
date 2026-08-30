@@ -46,7 +46,8 @@ $sourceFiles = Get-ChildItem -LiteralPath $repoRoot -Recurse -File | Where-Objec
     -not $relative.StartsWith('.safety-snapshots/') -and
     -not $relative.StartsWith('artifacts/') -and
     -not $relative.StartsWith('native/build/') -and
-    -not $relative.StartsWith('native/bin/')
+    -not $relative.StartsWith('native/bin/') -and
+    $relative -ne 'BUILD_MANIFEST.json'
 } | Sort-Object FullName
 $manifestLines = foreach ($file in $sourceFiles) {
     $relative = [System.IO.Path]::GetRelativePath($repoRoot, $file.FullName).Replace('\', '/')

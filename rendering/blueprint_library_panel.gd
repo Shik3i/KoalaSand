@@ -3,6 +3,7 @@ extends PanelContainer
 
 signal blueprint_selected(blueprint: BlueprintDefinition)
 signal save_clipboard_requested(name: String)
+signal closed
 
 var library: BlueprintLibrary
 var _search := LineEdit.new()
@@ -22,7 +23,7 @@ func _ready() -> void:
 	var column := VBoxContainer.new(); margin.add_child(column)
 	var head := HBoxContainer.new(); column.add_child(head)
 	var title := Label.new(); title.text = "Blueprint library"; title.theme_type_variation = "ScreenTitleLabel"; title.size_flags_horizontal = Control.SIZE_EXPAND_FILL; head.add_child(title)
-	var close_button := Button.new(); close_button.theme_type_variation = "QuietButton"; close_button.text = "Close"; close_button.pressed.connect(func(): visible = false); head.add_child(close_button)
+	var close_button := Button.new(); close_button.theme_type_variation = "QuietButton"; close_button.text = "Close  [Esc]"; close_button.pressed.connect(close); head.add_child(close_button)
 	_search.placeholder_text = "Search example and player blueprints…"; _search.text_changed.connect(func(_q: String): refresh()); column.add_child(_search)
 	var scroll := ScrollContainer.new(); scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL; column.add_child(scroll)
 	scroll.add_child(_entries)
@@ -34,6 +35,14 @@ func _ready() -> void:
 func initialize(value: BlueprintLibrary) -> void:
 	library = value
 	refresh()
+
+func open() -> void:
+	refresh()
+	KoalaSandTheme.show_panel(self, true)
+	_search.grab_focus()
+
+func close() -> void:
+	KoalaSandTheme.hide_panel(self, func() -> void: closed.emit())
 
 func refresh() -> void:
 	if library == null: return

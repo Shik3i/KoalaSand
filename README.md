@@ -38,7 +38,7 @@ Example loop:
 
 ## Status
 
-Current build: **0.1.0-playtest.2**. Early owner playtest; not a finished public release. Phase 13.7 establishes the audited source-control baseline without beginning Phase 14.
+Current build: **0.1.0-playtest.3**. Early owner playtest; not a finished public release. Phase 13.8 completes the final player-experience polish pass without beginning Phase 14.
 
 See [STATUS.md](STATUS.md), [MVP_SCOPE.md](MVP_SCOPE.md), [KNOWN_ISSUES.md](KNOWN_ISSUES.md) and [ROADMAP.md](ROADMAP.md).
 
@@ -71,7 +71,7 @@ Prerequisites: Windows PowerShell, Godot 4.7.1, CMake and a MinGW C++20 toolchai
 .\scripts\godot.ps1 --path .
 ```
 
-Always launch Godot through `scripts/godot.ps1`. It verifies 4.7.1 and isolates editor/runtime profile state under ignored repository-local directories.
+Always launch Godot through `scripts/godot.ps1`. It verifies 4.7.1 and isolates editor/runtime profile state under ignored repository-local directories. Automated tests, benchmarks and captures must use `-MuteAudio`; capture/benchmark arguments also select Godot's `Dummy` audio driver automatically.
 
 ## Testing and benchmarks
 

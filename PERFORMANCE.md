@@ -790,3 +790,23 @@ Final Windows measurements on Godot `4.7.1.stable.official.a13da4feb`, Ryzen 7 7
 The complete scripted matrix passed `26/26` benchmark programs. Phase 13.7 adversarial scaling additionally measured `10,000,000` exact production events in `172.305 ms` with `163,200,000,000` input and accounted micro-mass, and `100,000` WorldGen seeds with zero failures (`0.649/0.704/0.734/0.753 ms` p50/p95/p99/max per 1,000-seed batch).
 
 The accelerated four-hour soak was stopped at the user-approved 60-minute wall-time boundary after more than `64` minutes of continuous responsive execution. Live probes remained flat at approximately `104,157,184` bytes Working Set and `52,432,896` bytes Private Memory. Because the process was interrupted before its own terminal report, this is evidence for a stable 64-minute partial soak, not a completed four-hour pass.
+
+## Phase 13.8 final player-experience gate — 2026-08-30
+
+Host: Windows, NVIDIA GeForce RTX 4080 SUPER, Godot `4.7.1.stable.official.a13da4feb`, GL Compatibility, `1920×1080`, eight simulation workers, `Dummy` audio for every automated run.
+
+| Runtime case | FPS | Frame p95 | Frame p99 | Worst frame |
+|---|---:|---:|---:|---:|
+| Character | 345.6 | 3.030 ms | 3.333 ms | 8.478 ms |
+| Factory | 334.3 | 3.704 ms | 4.764 ms | 16.518 ms |
+| Creative | 330.9 | 3.333 ms | 4.011 ms | 6.848 ms |
+| Realistic Maximum Factory | 206.0 | 5.556 ms | 7.026 ms | 11.424 ms |
+| Production Overlay | 315.0 | 3.333 ms | 3.333 ms | 6.852 ms |
+| Build Catalog open | 277.1 | 3.704 ms | 4.571 ms | 8.294 ms |
+| Dense Synthetic Megafactory | 44.2 | 25.000 ms | 28.343 ms | 29.190 ms |
+
+The Dense Synthetic Megafactory deliberately places `15,600` structure tiles and keeps `169,351` active-region cells in the rendered stress view. Its below-target result is a documented scalability limit, not representative player density. Realistic Maximum remains above the `100 FPS` owner-playtest target.
+
+The bounded stability smoke ran Realistic Maximum Factory for `699.990 s` (`11m 39.990s`), rendered `183,379` frames and completed `42,044` ticks. Result: exit `0`, `262.0 FPS`, `4.167 ms` p95, `4.762 ms` p99, `35.798 ms` worst, no `SIGSEGV`, no `0xC0000374` and no additional project error. The recurring root-certificate-store diagnostic remained nonfatal.
+
+Full correctness: `26` scripts passed in `30.224 s`, including the eight-worker reactive-cell regression and `57` Phase 13.8 checks. Native Release build and Phase 9 render/simulation regression passed. Automated audio output was disabled; mixer generation, pool bounds, 16-bit format, loop bounds, seam delta and safe category headroom were verified structurally.

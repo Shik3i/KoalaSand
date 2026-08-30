@@ -1,4 +1,4 @@
-KOALASAND 0.1.0-playtest.2
+KOALASAND 0.1.0-playtest.3
 
 KoalaSand is a deterministic physical factory sandbox. Matter, heat, fluids, gases,
 fire, pressure, mechanical power and electricity interact in one editable world.
@@ -35,6 +35,7 @@ KNOWN LIMITATIONS
 - Windows x64 only for this candidate.
 - No installer or code signing.
 - Audio is original and procedural; no soundtrack yet.
+- Start the first real-audio check at low system volume and run one instance only.
 - Synthetic 100k-cell fire remains a stress case, not representative gameplay.
 - Some GPU/driver combinations may show a harmless Windows root-certificate-store
   diagnostic in the current isolated test environment; gameplay uses no network.

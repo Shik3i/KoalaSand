@@ -42,3 +42,19 @@ Phase 12 keeps organic UX contextual: Character HUD names the active Dig/Cut/Ign
 ## Phase 13 session UX
 
 Launch opens Main Menu with Continue, saved-world selection/Load, Delete confirmation and New World mode/seed/name. Pause exposes Resume, Save/Save As, autosave interval, UI scale, reduced motion, screen shake, window mode, audio and control hooks, Save + Menu and Save + Exit. Tutorials describe physical concepts and encourage editing example Blueprints; they never promise recipe outputs.
+
+## Phase 13.8 motion and modal policy
+
+- Important surfaces enter in `120–180 ms` with quadratic ease-out and leave in `80 ms` with quadratic ease-in.
+- Reduced Motion makes these transitions immediate; it also continues to suppress camera/effect motion where supported.
+- `Esc` closes Pause, Codex, Experiments, Blueprints, placement, Map, Research and HUD modals in player-visible priority order.
+- Close buttons must release the same modal lock as keyboard closing; a hidden panel may never continue blocking world input.
+- UI scale is reapplied across themed HUD descendants when settings are accepted or restored from a save.
+- World Map, Codex, Blueprint Library and Experiments expose explicit close actions and keyboard hints.
+
+## Audio presentation policy
+
+- Procedural output is signed 16-bit PCM at `32 kHz`; looping sources are periodic and seam-safe.
+- Raw white-noise beds are forbidden for loops. Filtered noise is restricted to short transient events.
+- Player category sliders operate below fixed safety headroom; `100%` does not mean `0 dB` on a category bus.
+- Automated Godot processes use `Dummy` audio. Subjective mix checks are manual, single-instance and begin at low system volume.

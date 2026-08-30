@@ -39,6 +39,7 @@ func initialize(world: Variant) -> void:
 func toggle() -> void:
 	visible = not visible
 	if visible:
+		KoalaSandTheme.animate_in(self, false, true)
 		_focus_selected()
 		queue_redraw()
 

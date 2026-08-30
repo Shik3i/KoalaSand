@@ -1,4 +1,4 @@
-# Owner First Playtest — 0.1.0-playtest.2
+# Owner First Playtest — 0.1.0-playtest.3
 
 Play normally first. Record mode, seed, resolution and anything that makes you stop to decode the interface.
 
@@ -24,6 +24,7 @@ Play normally first. Record mode, seed, resolution and anything that makes you s
 
 ## Game feel
 
+- Begin the first real-audio check at low Windows volume. Run one game instance only.
 - Which sounds became annoying?
 - Which actions lacked weight or feedback?
 - Did Water, Steam, Fire, Trees and machines feel alive?
@@ -39,3 +40,11 @@ Play normally first. Record mode, seed, resolution and anything that makes you s
 
 - Any hitch, FPS drop or save pause?
 - If something breaks: Pause → Export local diagnostics. Add exact steps, expected result, actual result and a screenshot if useful.
+
+## Five priority observations
+
+1. Whether Screen → Wet Riffle → magnetic/thermal separation is understandable without external notes.
+2. Whether Character movement, Jetpack, Hover and local build range feel comfortable for twenty minutes.
+3. Whether the new safe audio mix stays pleasant when Water, Fire and several machines overlap.
+4. Whether Inspector causes—missing vibration, insufficient flow, oxygen starvation, backpressure and power deficit—lead to the correct fix.
+5. Whether the sparse pixel-world presentation feels intentional enough or needs the next dedicated art pass.

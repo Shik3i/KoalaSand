@@ -10,7 +10,7 @@ func _check(condition: bool, label: String) -> void:
 	if not condition: failures.append(label)
 
 func _run() -> void:
-	_check(BuildInfo.VERSION == "0.1.0-playtest.2", "playtest.2 runtime version")
+	_check(BuildInfo.VERSION == "0.1.0-playtest.3", "playtest.3 runtime version")
 	_check(ProjectSettings.get_setting("application/config/version") == BuildInfo.VERSION, "project and runtime version agree")
 	for path in ["res://DESIGN_SYSTEM.md", "res://PHASE136_POLISH.md", "res://OWNER_FIRST_PLAYTEST.md", "res://scripts/capture_phase136.ps1", "res://scripts/create_phase136_contact_sheets.ps1"]:
 		_check(FileAccess.file_exists(path), "%s exists" % path)
@@ -29,6 +29,16 @@ func _run() -> void:
 	await process_frame
 	_check(AudioEventMixer.event_matrix().size() >= 30, "audio event coverage retained")
 	_check(mixer.get_child_count() == AudioEventMixer.MAX_UI_VOICES + AudioEventMixer.MAX_WORLD_ONESHOTS + AudioEventMixer.MAX_AGGREGATED_LOOPS, "audio pools remain bounded")
+	var loop_stream := ProceduralSfx.build(&"conveyor", true)
+	_check(loop_stream.format == AudioStreamWAV.FORMAT_16_BITS, "procedural audio uses 16-bit PCM")
+	_check(loop_stream.mix_rate == ProceduralSfx.SAMPLE_RATE, "procedural audio uses canonical sample rate")
+	_check(loop_stream.loop_end * 2 == loop_stream.data.size(), "loop bounds cover complete 16-bit sample data")
+	var first_sample := int(loop_stream.data[0]) | (int(loop_stream.data[1]) << 8)
+	var last_offset := loop_stream.data.size() - 2
+	var last_sample := int(loop_stream.data[last_offset]) | (int(loop_stream.data[last_offset + 1]) << 8)
+	if first_sample >= 32768: first_sample -= 65536
+	if last_sample >= 32768: last_sample -= 65536
+	_check(absi(first_sample - last_sample) < 2048, "procedural loop seam has no audible discontinuity")
 	mixer.queue_free()
 	if failures.is_empty():
 		print("PASS: %d Phase 13.6 polish correctness checks" % checks)
