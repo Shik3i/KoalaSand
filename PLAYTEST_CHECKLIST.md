@@ -1,4 +1,4 @@
-# KoalaSand 0.1.0-playtest.3 — Manual Playtest Checklist
+# KoalaSand 0.1.0-playtest.4 — Manual Playtest Checklist
 
 Record mode, seed, resolution, UI scale, GPU and approximate session length.
 

@@ -2,8 +2,8 @@
 
 ## Current baseline
 
-- Version: `0.1.0-playtest.3`.
-- Scope: Phase 13 MVP through Phase 13.8 final player-experience polish.
+- Version: `0.1.0-playtest.4`.
+- Scope: Phase 13 MVP through Phase 13.9 first-time-player experience and UX coverage.
 - Branch: `main`.
 - Engine: `Godot 4.7.1.stable.official.a13da4feb`; repository wrapper required.
 - Native: C++20 GDExtension, pinned `godot-cpp` commit `5ed72a0dc2517a8082598a950895c6b24e8aa282`.
@@ -43,6 +43,15 @@ Phase 13.8 retains the reviewed Phase 13.7 Git baseline and prepares a new owner
 - Unified modal entrance/exit motion, Reduced Motion bypass, reliable `Esc` ordering and correct modal-lock release.
 - Visible Map close action, readable Experiments cards, improved Component/Power/Steam presentation and distinct Main Menu/New Game states.
 - Two complete visual passes, `43` final captures, UI/gameplay/world-physics contact sheets and `1600×900`/`2560×1440` verification.
+
+## Phase 13.9 first-time-player experience
+
+- Central rich tooltip, control-attached highlight and bounded toast systems.
+- Physical help coverage for MVP Components, materials, Automation, Inspector properties and common blockers.
+- Factory, Character and Creative first-use paths with persistence, reset, disable and legacy-profile migration.
+- Live Controls help, onboarding settings, mode explanations, Research legend/unlock feedback, Blueprint annotations and actionable empty states.
+- Automated clean-state FTUE coverage plus sequential silent capture and packaged-profile gates.
+- Final verification: `27/27` correctness scripts, `316` focused FTUE checks, `148` audited surfaces, `30` final captures and a `599.983 s` representative smoke.
 
 ## Verification commands
 

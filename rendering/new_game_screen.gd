@@ -76,9 +76,9 @@ func _build_ui() -> void:
 	cards_row.add_theme_constant_override("separation", 14)
 	center.add_child(cards_row)
 	var descriptions := [
-		"RECOMMENDED\nPlan freely · Build at scale\nResearch enabled",
-		"Explore underground\nDig, build and fly\nLocal discovery",
-		"Shape the sandbox\nEverything unlocked\nNo progression gates",
+		"RECOMMENDED FIRST\nFree camera · build at any visible location\nPhysical Research progression enabled",
+		"PLAY AS THE KOALA\nMove, dig and fly · local vision and build range\nSame physical world and Research progression",
+		"EXPERIMENT FREELY\nFree camera · all materials and Components unlocked\nPhysics stays fully active; progression gates are off",
 	]
 	for index in range(3):
 		var axes := GameModeCapabilities.preset(index)
@@ -90,6 +90,7 @@ func _build_ui() -> void:
 		card.pressed.connect(_select_preset.bind(index))
 		cards_row.add_child(card)
 		_cards.append(card)
+	var choice_help := Label.new(); choice_help.text = "Which should I choose?  Factory teaches large-scale building · Character adds movement and discovery · Creative is for unrestricted experiments."; choice_help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; choice_help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; choice_help.theme_type_variation = "SecondaryLabel"; center.add_child(choice_help)
 
 	var content := HBoxContainer.new()
 	content.add_theme_constant_override("separation", 18)
@@ -117,6 +118,7 @@ func _build_ui() -> void:
 	_seed_input.placeholder_text = "signed 64-bit integer"
 	_seed_input.text_submitted.connect(func(_text: String) -> void: _refresh_preview())
 	settings.add_child(_seed_input)
+	var seed_help := Label.new(); seed_help.text = "Leave this value unchanged for the shown world, or choose New seed. The same seed and generation version reproduce the same world."; seed_help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; seed_help.theme_type_variation = "CaptionLabel"; settings.add_child(seed_help)
 	var seed_actions := HBoxContainer.new()
 	settings.add_child(seed_actions)
 	var randomize := Button.new()
@@ -209,6 +211,8 @@ func set_saved_worlds(worlds: Array[Dictionary]) -> void:
 		_save_selector.add_item("%s  ·  %s  ·  %s" % [str(metadata.get("world_name", "World")), str(metadata.get("timestamp_utc", "")), state])
 	var has_saves := _saved_worlds.any(func(metadata: Dictionary) -> bool: return bool(metadata.get("primary_valid", true)))
 	if _continue_button != null: _continue_button.disabled = not has_saves
+	if _continue_button != null:
+		HelpCatalog.attach(_continue_button, {"title":"Continue latest world", "description":"Loads the newest valid saved world.", "disabled_reason":"No valid saved world exists yet." if not has_saves else ""})
 	if _load_button != null: _load_button.visible = not _saved_worlds.is_empty()
 	if _delete_button != null: _delete_button.visible = not _saved_worlds.is_empty()
 	if _save_selector != null: _save_selector.visible = not _saved_worlds.is_empty()
@@ -233,7 +237,7 @@ func _recover_selected() -> void:
 
 func _update_save_details(index: int) -> void:
 	if _save_details == null or _saved_worlds.is_empty():
-		if _save_details != null: _save_details.text = "No saved worlds yet. Saves remain in the standard user application data directory."
+		if _save_details != null: _save_details.text = "No saved worlds yet. Create a world below; KoalaSand will save it from the pause menu and through autosave."
 		if _recover_button != null: _recover_button.visible = false
 		return
 	var metadata: Dictionary = _saved_worlds[clampi(index, 0, _saved_worlds.size() - 1)]

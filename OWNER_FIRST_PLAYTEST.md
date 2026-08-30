@@ -1,6 +1,10 @@
-# Owner First Playtest — 0.1.0-playtest.3
+# Owner First Playtest — 0.1.0-playtest.4
 
-Play normally first. Record mode, seed, resolution and anything that makes you stop to decode the interface.
+**DO NOT STUDY THE CODEX FIRST. PLAY NORMALLY.**
+
+The onboarding itself is now being tested. Start with Character or Factory according to your preference; do not follow a scripted route. Record mode, seed and resolution only when reporting a bug.
+
+Note only: **CONFUSING · ANNOYING · UGLY · FUN · MISSING EXPLANATION · TOO MUCH EXPLANATION · BUG**.
 
 ## First 15 minutes
 
@@ -8,6 +12,8 @@ Play normally first. Record mode, seed, resolution and anything that makes you s
 - Did movement/camera feel good?
 - Could you find basic Components?
 - What still looked prototype-like?
+- Did any hint repeat after you had demonstrated the action?
+- Was help useful without telling you one exact factory design?
 
 ## Building
 

@@ -29,7 +29,7 @@ There is no black-box Furnace recipe. Players arrange ordinary components—Mesh
 - Conveyors, finite subsurface routes, spatial pipes with local failures, Steam turbines, shafts and electrical networks.
 - Sensors, integer logic, automation, Blueprints, overlays and physical inspection.
 - Main Menu, New/Continue/Load, atomic saves, backups, autosave and recovery.
-- Shared Research, milestones, onboarding, Codex, Map and diagnostics.
+- Shared Research, milestones, persistent mode-specific onboarding, rich physical tooltips, Controls help, Codex, Map and diagnostics.
 - Bounded procedural audio and batched 2D presentation.
 
 Example loop:
@@ -38,7 +38,7 @@ Example loop:
 
 ## Status
 
-Current build: **0.1.0-playtest.3**. Early owner playtest; not a finished public release. Phase 13.8 completes the final player-experience polish pass without beginning Phase 14.
+Current build: **0.1.0-playtest.4**. Early owner playtest; not a finished public release. Phase 13.9 completes first-time-player guidance and complete UX coverage without beginning Phase 14.
 
 See [STATUS.md](STATUS.md), [MVP_SCOPE.md](MVP_SCOPE.md), [KNOWN_ISSUES.md](KNOWN_ISSUES.md) and [ROADMAP.md](ROADMAP.md).
 

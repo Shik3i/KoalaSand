@@ -43,3 +43,19 @@ Phase 12 adds an everyday sandbox loop without survival upkeep: discover Tree �
 ## Phase 13 vertical slice
 
 Normal launch now enters Main Menu, then New/Continue/Load. The shared arc is physical flow → Research Bank → component screening/wet/magnetic separation → real heat and phase processing → automation → Steam → shaft power → electricity → Powered Factory Established. Pause exposes Save, Save As, autosave, accessibility/settings hooks, Return to Menu and safe exit. Onboarding teaches aperture, vibration, density, geometry and temperature instead of recipes.
+
+## Discovery path
+
+| Transition | Player-facing discovery |
+|---|---|
+| Raw Sand → Research | current goal, material tooltip, Research Bank Component help |
+| Research → Screening | Research unlock notice, Catalog help, Basic Screen example |
+| Screening → Concentrates | Mesh/Vibration Inspector blockers, screening Codex concept |
+| Concentrates → Wet Separation | current goal, Riffle help, Basic Sluice annotations, Experiment |
+| Wet Separation → Iron / Gold | material help, magnetic Component help, density Experiment |
+| Iron → Automation | Research tree, complete Automation Catalog and Controls help |
+| Automation → Steam | thermal/pressure Codex links, Furnace/Vessel examples, Inspector |
+| Steam → Power | Pipe pressure and Turbine blockers, power Inspector and overlay |
+| Power → Powered Factory | current-goal criteria, production/power overlays and statistics |
+
+Each source explains a physical outcome and leaves geometry open to player experimentation.

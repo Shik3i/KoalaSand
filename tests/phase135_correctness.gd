@@ -71,7 +71,7 @@ func _run() -> void:
 	_check(audio.statistics().actual_voices <= AudioEventMixer.MAX_AGGREGATED_LOOPS, "1000 sources aggregate within loop budget")
 	_check(float(audio.statistics().audio_cpu_ms) < 5.0, "representative audio aggregation remains bounded")
 	_check(AudioEventMixer.event_matrix().size() >= 30, "complete audio event matrix registered")
-	_check(BuildInfo.VERSION == "0.1.0-playtest.3", "visible playtest version")
+	_check(BuildInfo.VERSION == "0.1.0-playtest.4", "visible playtest version")
 
 	var manager := WorldSaveManager.new("user://phase135-recovery")
 	manager.delete_world("Recovery", true)

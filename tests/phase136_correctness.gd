@@ -10,7 +10,7 @@ func _check(condition: bool, label: String) -> void:
 	if not condition: failures.append(label)
 
 func _run() -> void:
-	_check(BuildInfo.VERSION == "0.1.0-playtest.3", "playtest.3 runtime version")
+	_check(BuildInfo.VERSION == "0.1.0-playtest.4", "playtest.4 runtime version")
 	_check(ProjectSettings.get_setting("application/config/version") == BuildInfo.VERSION, "project and runtime version agree")
 	for path in ["res://DESIGN_SYSTEM.md", "res://PHASE136_POLISH.md", "res://OWNER_FIRST_PLAYTEST.md", "res://scripts/capture_phase136.ps1", "res://scripts/create_phase136_contact_sheets.ps1"]:
 		_check(FileAccess.file_exists(path), "%s exists" % path)

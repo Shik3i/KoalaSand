@@ -9,6 +9,7 @@ signal codex_requested(entry_id: String)
 signal experiments_requested
 signal blueprints_requested
 signal diagnostics_requested
+signal planning_pause_requested
 
 const PAGE_COUNT := 10
 const SLOT_COUNT := 10
@@ -39,6 +40,7 @@ var _inspector_codex_id := ""
 var _planning_badge: Label
 var _goal_title: Label
 var _goal_criteria: Label
+var _goal_help_id := "concept:construction"
 var _action_row: HBoxContainer
 var _ui_state := GameUIState.new()
 var _onboarding := OnboardingState.new()
@@ -46,6 +48,13 @@ var _preset_id := GameModeCapabilities.Preset.FACTORY
 var last_update_ms := 0.0
 var _toast_tween: Tween
 var _material_names: Dictionary = {}
+var _tooltip_layer: ContextTooltipLayer
+var _highlight_layer: GuidedHighlightLayer
+var _toast_center: ToastCenter
+var _controls_panel: PanelContainer
+var _controls_text: Label
+var _help_targets: Dictionary = {}
+var _menu_visibility: Dictionary = {}
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -54,6 +63,7 @@ func _ready() -> void:
 	for page in PAGE_COUNT:
 		_pages.append([])
 	_build_hud()
+	_install_help_layers()
 
 func initialize(world: Variant) -> void:
 	_world = world
@@ -91,6 +101,7 @@ func toggle_catalog() -> void:
 		KoalaSandTheme.animate_in(_catalog)
 		_ui_state.open_modal("build_catalog")
 		_search.grab_focus()
+		demonstrate_onboarding("OPEN_CATALOG")
 	else:
 		_ui_state.close_modal("build_catalog")
 
@@ -126,22 +137,74 @@ func configure_mode(preset_id: int) -> void:
 	_mode_badge.text = ["FACTORY", "CHARACTER", "CREATIVE"][_preset_id]
 	_mode_badge.add_theme_color_override("font_color", [KoalaSandTheme.COLOR_INFO, KoalaSandTheme.COLOR_SUCCESS, KoalaSandTheme.COLOR_ACCENT_BRIGHT][_preset_id])
 	_overlay_menu.set_item_disabled(1, _preset_id == GameModeCapabilities.Preset.CHARACTER)
-	_onboarding_hint.text = _onboarding.current_hint()
+	_refresh_onboarding()
 
 
 func set_onboarding_enabled(enabled: bool) -> void:
 	_onboarding.enabled = enabled
-	_onboarding_hint.text = _onboarding.current_hint()
+	_refresh_onboarding()
 
 
 func reset_onboarding() -> void:
 	_onboarding.reset(_preset_id)
-	_onboarding_hint.text = _onboarding.current_hint()
+	_refresh_onboarding()
 
 
 func complete_onboarding_goal(goal: String) -> void:
 	_onboarding.complete(goal)
-	_onboarding_hint.text = _onboarding.current_hint()
+	_refresh_onboarding()
+
+
+func demonstrate_onboarding(event_id: String) -> void:
+	if _onboarding.demonstrate(event_id):
+		_refresh_onboarding()
+
+
+func onboarding_state() -> OnboardingState:
+	return _onboarding
+
+
+func set_help_preferences(tooltip_delay: float, reduced_motion: bool) -> void:
+	if _tooltip_layer != null: _tooltip_layer.delay_seconds = clampf(tooltip_delay, 0.0, 1.5)
+	if _highlight_layer != null: _highlight_layer.reduced_motion = reduced_motion
+	if _toast_center != null: _toast_center.reduced_motion = reduced_motion
+
+
+func bind_help_root(root: Node) -> void:
+	if _tooltip_layer != null:
+		_tooltip_layer.bind_tree(root)
+
+
+func set_gameplay_hud_visible(enabled: bool) -> void:
+	if not enabled:
+		if not _menu_visibility.is_empty():
+			return
+		for child: Node in get_children():
+			if child == _tooltip_layer:
+				continue
+			if child is CanvasItem:
+				_menu_visibility[child] = (child as CanvasItem).visible
+				(child as CanvasItem).visible = false
+		return
+	for child: Variant in _menu_visibility:
+		if is_instance_valid(child) and child is CanvasItem:
+			(child as CanvasItem).visible = bool(_menu_visibility[child])
+	_menu_visibility.clear()
+
+
+func preview_onboarding_step(step_id: String) -> void:
+	_onboarding.reset(_preset_id)
+	for step: Dictionary in OnboardingState.STEPS[_preset_id]:
+		if str(step.id) == step_id:
+			break
+		_onboarding.complete(str(step.id))
+	_refresh_onboarding()
+
+
+func preview_tooltip(spec: Dictionary, target_id := "catalog") -> void:
+	var target := _help_targets.get(target_id) as Control
+	if _tooltip_layer != null and is_instance_valid(target):
+		_tooltip_layer.show_virtual(spec, target.get_global_rect())
 
 
 func show_context_hint(id: String, message: String) -> void:
@@ -164,8 +227,11 @@ func show_physical_inspector(result: Dictionary) -> void:
 	var lines: Array[String] = []
 	var causes: Array = result.get("causes", [])
 	if not causes.is_empty():
-		lines.append("BLOCKED")
-		for cause: String in causes: lines.append("  %s" % cause.capitalize())
+		lines.append("WHY IT IS NOT WORKING")
+		for cause: String in causes:
+			var help := HelpCatalog.failure(cause)
+			lines.append("• %s" % str(help.title))
+			lines.append("  %s" % str(help.description))
 		lines.append("")
 	lines.append("STATE")
 	lines.append_array(Array(result.get("summary", [])))
@@ -175,25 +241,24 @@ func show_physical_inspector(result: Dictionary) -> void:
 	_inspector_advanced.visible = false
 	_inspector_advanced_button.visible = not _inspector_advanced.text.is_empty()
 	_inspector_codex_id = str(result.get("codex_id", ""))
+	demonstrate_onboarding("INSPECT")
+	if _highlight_layer != null: _highlight_layer.clear()
 
 func set_planning_paused(paused: bool) -> void:
 	_planning_badge.visible = paused
 
-func set_current_goal(title: String, criteria: Array[String]) -> void:
+func set_current_goal(title: String, criteria: Array[String], help_id := "concept:construction") -> void:
 	_goal_title.text = title
 	_goal_criteria.text = " · ".join(criteria.slice(0, 4))
+	_goal_help_id = help_id
 
 
-func show_notification(message: String) -> void:
+func show_notification(message: String, kind := "INFO") -> void:
 	_ui_state.notify(message)
-	show_alert(message)
-	if _toast_tween != null and _toast_tween.is_valid():
-		_toast_tween.kill()
-	_alert_text.modulate.a = 1.0
-	_toast_tween = create_tween()
-	_toast_tween.tween_interval(2.2)
-	_toast_tween.tween_property(_alert_text, "modulate:a", 0.0, KoalaSandTheme.MOTION_EMPHASIS)
-	_toast_tween.tween_callback(func(): _alert_text.visible = false)
+	if _toast_center != null:
+		_toast_center.push(message, kind)
+	else:
+		show_alert(message)
 
 
 func modal_open() -> bool:
@@ -207,6 +272,7 @@ func close_top_modal() -> bool:
 	match top:
 		"build_catalog": _catalog.visible = false
 		"statistics": _statistics_panel.visible = false
+		"controls": _controls_panel.visible = false
 	_ui_state.close_modal(top)
 	return true
 
@@ -214,8 +280,10 @@ func close_top_modal() -> bool:
 func set_external_modal(id: String, open: bool) -> void:
 	if open:
 		_ui_state.open_modal(id)
+		if _highlight_layer != null: _highlight_layer.clear()
 	else:
 		_ui_state.close_modal(id)
+		_refresh_onboarding()
 
 func serialize_quickbars() -> Dictionary:
 	return {"schema": 1, "active_page": _active_page, "pages": _pages.duplicate(true)}
@@ -241,7 +309,7 @@ func deserialize_session_state(state: Dictionary) -> bool:
 		return false
 	if not _onboarding.deserialize(Dictionary(state.get("onboarding", {}))):
 		return false
-	_onboarding_hint.text = _onboarding.current_hint()
+	_refresh_onboarding()
 	return true
 
 func _build_hud() -> void:
@@ -256,11 +324,20 @@ func _build_hud() -> void:
 	_status = Label.new(); _status.size_flags_horizontal = Control.SIZE_EXPAND_FILL; top_row.add_child(_status)
 	_reserves = Label.new(); _reserves.theme_type_variation = "NumericLabel"; top_row.add_child(_reserves)
 	var research := Button.new(); research.theme_type_variation = "QuietButton"; research.text = "Research"; research.tooltip_text = InputGlyphs.hint(&"open_research", "Open Research"); research.pressed.connect(func(): research_requested.emit()); top_row.add_child(research)
+	_help_targets.research = research; HelpCatalog.attach(research, HelpCatalog.control("research"))
 	var codex := Button.new(); codex.theme_type_variation = "QuietButton"; codex.text = "Codex"; codex.pressed.connect(func(): codex_requested.emit("")); top_row.add_child(codex)
+	HelpCatalog.attach(codex, HelpCatalog.control("codex"))
 	var experiments := Button.new(); experiments.theme_type_variation = "QuietButton"; experiments.text = "Ideas"; experiments.tooltip_text = "Optional physical experiments"; experiments.pressed.connect(func(): experiments_requested.emit()); top_row.add_child(experiments)
+	HelpCatalog.attach(experiments, HelpCatalog.control("experiments"))
 	var map_button := Button.new(); map_button.theme_type_variation = "QuietButton"; map_button.text = "Map"; map_button.tooltip_text = InputGlyphs.hint(&"map", "Open Map"); map_button.pressed.connect(func(): map_requested.emit()); top_row.add_child(map_button)
+	HelpCatalog.attach(map_button, HelpCatalog.control("map"))
 	var statistics := Button.new(); statistics.theme_type_variation = "QuietButton"; statistics.text = "Stats"; statistics.tooltip_text = InputGlyphs.hint(&"statistics", "Open Statistics"); statistics.pressed.connect(toggle_statistics); top_row.add_child(statistics)
 	var overlay_button := Button.new(); overlay_button.theme_type_variation = "QuietButton"; overlay_button.text = "Overlay  ▾"; overlay_button.pressed.connect(_show_overlay_menu.bind(overlay_button)); top_row.add_child(overlay_button)
+	HelpCatalog.attach(overlay_button, HelpCatalog.control("overlay"))
+	var planning := Button.new(); planning.theme_type_variation = "QuietButton"; planning.text = "Plan"; planning.pressed.connect(func(): planning_pause_requested.emit()); top_row.add_child(planning)
+	_help_targets.planning_pause = planning; HelpCatalog.attach(planning, HelpCatalog.control("planning_pause"))
+	var controls := Button.new(); controls.theme_type_variation = "QuietButton"; controls.text = "? Controls"; controls.pressed.connect(toggle_controls); top_row.add_child(controls)
+	_help_targets.controls = controls; HelpCatalog.attach(controls, HelpCatalog.control("controls"))
 	_overlay_menu = PopupMenu.new()
 	var overlays := [["None",0], ["Geology",1], ["Temperature",4], ["Magnetic Field",5], ["Automation",8], ["Underground Logistics",9], ["Production Flow",12], ["Power",13]]
 	for entry: Array in overlays: _overlay_menu.add_item(str(entry[0]), int(entry[1]))
@@ -284,7 +361,12 @@ func _build_hud() -> void:
 		{"name":"BLUEPRINT", "kind":"blueprint_select", "id":0, "icon":"blueprint"},
 	]
 	for action: Dictionary in actions:
-		var button := Button.new(); button.theme_type_variation = "QuietButton"; button.text = str(action.name).capitalize(); button.tooltip_text = str(action.name).capitalize(); button.pressed.connect(func(): tool_selected.emit(action)); _action_row.add_child(button)
+		var button := Button.new(); button.theme_type_variation = "QuietButton"; button.text = str(action.name).capitalize(); button.pressed.connect(func(): tool_selected.emit(action)); _action_row.add_child(button)
+		var help_id: String = str({"pipette":"pipette", "blueprint_select":"blueprint", "select":"info_mode"}.get(str(action.kind), ""))
+		var action_help: Dictionary = HelpCatalog.control(help_id) if not help_id.is_empty() else {"title":str(action.name).capitalize(), "description":"Use this world tool to interact with physical cells and Components."}
+		HelpCatalog.attach(button, action_help)
+		if str(action.kind) == "terrain": _help_targets.dig = button
+		if str(action.kind) == "select": _help_targets.info = button
 
 	var bottom := VBoxContainer.new()
 	bottom.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
@@ -293,15 +375,20 @@ func _build_hud() -> void:
 	add_child(bottom)
 	var page_row := HBoxContainer.new(); page_row.alignment = BoxContainer.ALIGNMENT_CENTER; bottom.add_child(page_row)
 	var previous_page := Button.new(); previous_page.text = "◀"; previous_page.pressed.connect(change_page.bind(-1)); page_row.add_child(previous_page)
+	HelpCatalog.attach(previous_page, HelpCatalog.control("quickbar_previous"))
 	_page_label = Label.new(); _page_label.text = "1 / %d" % PAGE_COUNT; _page_label.theme_type_variation = "CaptionLabel"; page_row.add_child(_page_label)
 	var next_page := Button.new(); next_page.text = "▶"; next_page.pressed.connect(change_page.bind(1)); page_row.add_child(next_page)
+	HelpCatalog.attach(next_page, HelpCatalog.control("quickbar_next"))
 	var catalog_button := Button.new(); catalog_button.text = "Build catalog"; catalog_button.tooltip_text = InputGlyphs.hint(&"build_catalog", "Open Catalog"); catalog_button.pressed.connect(toggle_catalog); page_row.add_child(catalog_button)
+	_help_targets.catalog = catalog_button; HelpCatalog.attach(catalog_button, HelpCatalog.control("catalog"))
 	var blueprint_button := Button.new(); blueprint_button.text = "Blueprints"; blueprint_button.pressed.connect(func(): blueprints_requested.emit()); page_row.add_child(blueprint_button)
+	_help_targets.blueprints = blueprint_button; HelpCatalog.attach(blueprint_button, HelpCatalog.control("blueprint"))
 	var row := HBoxContainer.new(); row.alignment = BoxContainer.ALIGNMENT_CENTER; row.add_theme_constant_override("separation", 5); bottom.add_child(row)
 	for index in SLOT_COUNT:
 		var slot := ToolSlot.new(); slot.custom_minimum_size = Vector2(62, 50); slot.index = index
 		slot.pressed.connect(_activate_visible_slot.bind(index)); slot.slot_drop.connect(_on_slot_drop); slot.slot_clear.connect(_on_slot_clear)
 		row.add_child(slot); _slot_nodes.append(slot)
+	_help_targets.quickbar = row
 
 	_catalog = PanelContainer.new()
 	_catalog.theme_type_variation = "ElevatedPanel"
@@ -337,12 +424,17 @@ func _build_hud() -> void:
 	_inspector_advanced = Label.new(); _inspector_advanced.visible = false; _inspector_advanced.add_theme_color_override("font_color", Color("7f9295")); inspector_column.add_child(_inspector_advanced)
 	var inspector_codex := Button.new(); inspector_codex.text = "OPEN IN CODEX"; inspector_codex.pressed.connect(func(): if not _inspector_codex_id.is_empty(): codex_requested.emit(_inspector_codex_id)); inspector_column.add_child(inspector_codex)
 
-	var onboarding_panel := PanelContainer.new(); onboarding_panel.theme_type_variation = "HudPanel"; onboarding_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT); onboarding_panel.offset_left = -390; onboarding_panel.offset_top = 70; onboarding_panel.offset_right = -18; onboarding_panel.offset_bottom = 150; onboarding_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE; add_child(onboarding_panel)
+	var onboarding_panel := PanelContainer.new(); onboarding_panel.theme_type_variation = "HudPanel"; onboarding_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT); onboarding_panel.offset_left = -390; onboarding_panel.offset_top = 70; onboarding_panel.offset_right = -18; onboarding_panel.offset_bottom = 202; onboarding_panel.mouse_filter = Control.MOUSE_FILTER_PASS; add_child(onboarding_panel)
 	var goal_column := VBoxContainer.new(); onboarding_panel.add_child(goal_column)
 	var goal_badge := Label.new(); goal_badge.text = "CURRENT GOAL"; goal_badge.theme_type_variation = "CaptionLabel"; goal_column.add_child(goal_badge)
 	_goal_title = Label.new(); _goal_title.text = "Discover physical processing"; _goal_title.theme_type_variation = "SectionTitleLabel"; goal_column.add_child(_goal_title)
 	_goal_criteria = Label.new(); _goal_criteria.text = "Build · Observe · Iterate"; _goal_criteria.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS; _goal_criteria.add_theme_color_override("font_color", KoalaSandTheme.COLOR_TEXT_SECONDARY); goal_column.add_child(_goal_criteria)
+	var goal_help := Button.new(); goal_help.theme_type_variation = "QuietButton"; goal_help.text = "How?"; goal_help.pressed.connect(func(): codex_requested.emit(_goal_help_id)); goal_column.add_child(goal_help)
+	_help_targets.goal_help = goal_help
+	HelpCatalog.attach(goal_help, {"title":"Goal help", "description":"Opens a relevant physical principle. It explains the outcome without prescribing one exact factory design.", "codex_id":"concept:construction"})
 	_onboarding_hint = Label.new(); _onboarding_hint.text = _onboarding.current_hint(); _onboarding_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; _onboarding_hint.add_theme_color_override("font_color", Color("a9c3bd")); goal_column.add_child(_onboarding_hint)
+	_help_targets.status = onboarding_panel
+	_build_controls_panel()
 
 func _build_tool_data() -> void:
 	var structures: Dictionary = {}
@@ -411,8 +503,22 @@ func _build_tool_data() -> void:
 		{"kind":"wiring", "id":0, "name":"Wire", "short":"Y", "icon":"wire", "category":"Automation"},
 	]
 	tools = tools.filter(func(tool: Dictionary) -> bool: return str(tool.kind) not in ["organic_clear", "ignite", "remove", "wiring"] and not (str(tool.kind) == "terrain" and int(tool.id) == 3))
+	tools = tools.filter(func(tool: Dictionary) -> bool: return str(tool.kind) != "automation")
+	for automation_definition: Dictionary in _world.get_automation_definitions():
+		var automation_help_definition := automation_definition.duplicate(true); automation_help_definition.key = str(automation_definition.id)
+		tools.append({"kind":"automation", "id":int(automation_definition.type_id), "name":str(automation_definition.display_name), "short":"A%d" % int(automation_definition.type_id), "icon":"wire" if bool(automation_definition.actuator) else "sensor", "category":"Automation", "locked":not bool(automation_definition.unlocked), "help":HelpCatalog.automation(automation_help_definition, not bool(automation_definition.unlocked))})
 	for tool in tools:
-		if tool.kind == "structure": tool.locked = not _world.is_structure_unlocked(tool.id)
+		if tool.kind == "structure":
+			tool.locked = not _world.is_structure_unlocked(tool.id)
+			tool.help = HelpCatalog.component(int(tool.id), Dictionary(structures.get(int(tool.id), {})), bool(tool.locked))
+		elif tool.kind in ["terrain", "material"]:
+			var registry := MaterialRegistry.new()
+			if registry.load_directory() == OK:
+				var material_id := materials_id_for_tool(tool, registry)
+				var material_definition := registry.get_definition(material_id)
+				if material_definition != null: tool.help = HelpCatalog.material(material_definition)
+		elif not tool.has("help"):
+			tool.help = {"title":str(tool.name), "description":"Select this tool to interact with ordinary physical world cells."}
 	for page in PAGE_COUNT:
 		_pages[page] = []
 		for index in SLOT_COUNT:
@@ -426,7 +532,10 @@ func _refresh_slots() -> void:
 		slot.page = _active_page
 		slot.configure(_pages[_active_page][index], _active_page, index)
 		slot.modulate = Color.WHITE
-		slot.tooltip_text += "\nQuickbar %d · key %s" % [_active_page + 1, "0" if index == 9 else str(index + 1)]
+		if not slot.tool.is_empty():
+			var spec := Dictionary(slot.tool.get("help", {})).duplicate(true)
+			spec.shortcut_action = StringName("quickbar_%d" % (0 if index == 9 else index + 1))
+			HelpCatalog.attach(slot, spec)
 
 func _refresh_catalog() -> void:
 	if _catalog_grid == null or not has_meta("catalog_tools"):
@@ -437,6 +546,7 @@ func _refresh_catalog() -> void:
 		if not query.is_empty() and not query in str(tool.name).to_lower() and not query in str(tool.category).to_lower(): continue
 		if _category_filter != "ALL" and _canonical_category(tool) != _category_filter: continue
 		var entry := ToolSlot.new(); entry.custom_minimum_size = Vector2(188, 76); entry.configure(tool, 0, 0, true); entry.text = "       %s\n       %s" % [tool.name, "Research required" if bool(tool.get("locked", false)) else _canonical_category(tool).capitalize()]; entry.alignment = HORIZONTAL_ALIGNMENT_LEFT; entry.pressed.connect(func(): tool_selected.emit(tool)); _catalog_grid.add_child(entry)
+		if _tooltip_layer != null: _tooltip_layer.bind(entry)
 
 func _canonical_category(tool: Dictionary) -> String:
 	var source := str(tool.get("category", "")).to_lower()
@@ -480,12 +590,17 @@ func _refresh_statistics() -> void:
 		return
 	var statistics: Dictionary = _world.get_production_statistics()
 	var lines: Array[String] = ["PRODUCTION", "", "MATERIAL                 1 MIN       5 MIN      TOTAL"]
+	var material_rows := 0
 	for material: Dictionary in statistics.get("materials", []):
 		if int(material.produced_lifetime) == 0 and int(material.consumed_lifetime) == 0:
 			continue
 		var name := str(_material_names.get(int(material.material_id), "Material %d" % int(material.material_id))).left(20)
 		lines.append("%-20s  +%-8d  +%-8d  +%d" % [name, material.produced_1m, material.produced_5m, material.produced_lifetime])
 		lines.append("%-20s  −%-8d  −%-8d  −%d" % ["consumed", material.consumed_1m, material.consumed_5m, material.consumed_lifetime])
+		material_rows += 1
+	if material_rows == 0:
+		lines.append("No production data yet.")
+		lines.append("Build and run a physical process to begin recording throughput.")
 	lines.append("")
 	lines.append("%d tracked material events" % int(statistics.get("events_total", 0)))
 	if _world.has_method("get_organic_statistics"):
@@ -497,6 +612,74 @@ func _refresh_statistics() -> void:
 		lines.append("Wood water released %d · Food cooked/burned %d/%d" % [organic.water_evaporated_from_wood, organic.food_cooked, organic.food_burned])
 		lines.append("Fire active %d · Smoke produced %d" % [organic.reaction_cells_visited, organic.smoke_produced])
 	_statistics_text.text = "\n".join(lines)
+
+
+func materials_id_for_tool(tool: Dictionary, registry: MaterialRegistry) -> int:
+	if str(tool.kind) == "terrain" and int(tool.id) == 0: return registry.get_id(&"raw_sand")
+	return int(tool.id)
+
+
+func toggle_controls() -> void:
+	_controls_panel.visible = not _controls_panel.visible
+	if _controls_panel.visible:
+		_controls_text.text = _controls_copy()
+		_ui_state.open_modal("controls")
+		KoalaSandTheme.animate_in(_controls_panel)
+		if _highlight_layer != null: _highlight_layer.clear()
+	else:
+		_ui_state.close_modal("controls")
+		_refresh_onboarding()
+
+
+func _build_controls_panel() -> void:
+	_controls_panel = PanelContainer.new(); _controls_panel.theme_type_variation = "ModalPanel"; _controls_panel.visible = false; _controls_panel.set_anchors_preset(Control.PRESET_CENTER); _controls_panel.offset_left = -330; _controls_panel.offset_top = -300; _controls_panel.offset_right = 330; _controls_panel.offset_bottom = 300; _controls_panel.mouse_filter = Control.MOUSE_FILTER_STOP; add_child(_controls_panel)
+	var column := VBoxContainer.new(); _controls_panel.add_child(column)
+	var row := HBoxContainer.new(); column.add_child(row)
+	var title := Label.new(); title.text = "Controls"; title.theme_type_variation = "ScreenTitleLabel"; title.size_flags_horizontal = Control.SIZE_EXPAND_FILL; row.add_child(title)
+	var close := Button.new(); close.text = "Close"; close.pressed.connect(toggle_controls); row.add_child(close)
+	var intro := Label.new(); intro.text = "Current bindings · updates whenever this panel opens"; intro.theme_type_variation = "CaptionLabel"; column.add_child(intro)
+	var scroll := ScrollContainer.new(); scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL; column.add_child(scroll)
+	_controls_text = Label.new(); _controls_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; _controls_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL; scroll.add_child(_controls_text)
+
+
+func _controls_copy() -> String:
+	var groups := {
+		"MOVEMENT":[&"move_left", &"move_right", &"jump", &"jetpack", &"sprint", &"hover"],
+		"BUILD & EDIT":[&"build_catalog", &"pipette", &"rotate", &"copy", &"cut", &"paste", &"undo", &"redo", &"blueprint"],
+		"INSPECT & PLAN":[&"info_mode", &"planning_pause", &"open_research", &"open_codex", &"map", &"overlay_selector", &"toggle_wiring"],
+	}
+	var lines: Array[String] = []
+	for group: String in groups:
+		lines.append(group)
+		for action: StringName in groups[group]:
+			lines.append("%-26s %s" % [String(action).replace("_", " ").capitalize(), InputGlyphs.action(action)])
+		lines.append("")
+	return "\n".join(lines)
+
+
+func _install_help_layers() -> void:
+	_toast_center = ToastCenter.new(); add_child(_toast_center)
+	_highlight_layer = GuidedHighlightLayer.new(); add_child(_highlight_layer)
+	_tooltip_layer = ContextTooltipLayer.new(); _tooltip_layer.codex_requested.connect(func(entry_id: String): codex_requested.emit(entry_id)); add_child(_tooltip_layer)
+	_tooltip_layer.call_deferred("bind_tree", self)
+	call_deferred("_refresh_onboarding")
+
+
+func _refresh_onboarding() -> void:
+	if _onboarding_hint == null:
+		return
+	_onboarding_hint.text = _onboarding.current_hint()
+	_onboarding_hint.visible = not _onboarding_hint.text.is_empty()
+	if _highlight_layer == null:
+		return
+	if _ui_state.world_input_blocked():
+		_highlight_layer.clear()
+		return
+	var target := _help_targets.get(_onboarding.current_target()) as Control
+	if _onboarding_hint.visible and is_instance_valid(target):
+		_highlight_layer.show_step(target, "NEXT")
+	else:
+		_highlight_layer.clear()
 
 func _build_theme() -> Theme:
 	return KoalaSandTheme.build()

@@ -4,11 +4,11 @@ Priorities describe engineering risk for continued owner playtesting, not a rele
 
 ## P0
 
-None known after the Phase 13.8 verification gate.
+None known after the Phase 13.9 verification gate.
 
 ## P1
 
-- **Dense synthetic Megafactory:** intentionally pathological density measured `44.2 FPS`, `25.000 ms` p95 and `28.343 ms` p99 on the Phase 13.8 host. It is reported separately from the realistic maximum-factory gate; see [PERFORMANCE.md](PERFORMANCE.md).
+- **Dense synthetic Megafactory:** intentionally pathological density measured `43.7 FPS`, `25.000 ms` p95 and `27.905 ms` p99 on the Phase 13.9 host. It is reported separately from the realistic maximum-factory gate; see [PERFORMANCE.md](PERFORMANCE.md).
 - **Manual playtest coverage:** automated captures and state assertions cannot establish subjective controls, readability, audio balance or fun. The owner checklist remains required.
 
 ## P2

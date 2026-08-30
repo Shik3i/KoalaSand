@@ -6,7 +6,7 @@ config_version=5
 [application]
 
 config/name="KoalaSand"
-config/version="0.1.0-playtest.3"
+config/version="0.1.0-playtest.4"
 run/main_scene="res://scenes/debug_world.tscn"
 config/auto_accept_quit=false
 

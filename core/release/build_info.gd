@@ -1,7 +1,7 @@
 class_name BuildInfo
 extends RefCounted
 
-const VERSION := "0.1.0-playtest.3"
+const VERSION := "0.1.0-playtest.4"
 const SAVE_SCHEMA := 1
 const GENERATION_VERSION := 2
 
@@ -11,6 +11,10 @@ static func current() -> Dictionary:
 		var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://BUILD_MANIFEST.json"))
 		if parsed is Dictionary:
 			manifest.merge(parsed, true)
+	# The source constant is authoritative during development and after an
+	# upgrade; a stale packaged manifest may supply build metadata, never an old
+	# player-visible version.
+	manifest.version = VERSION
 	return manifest
 
 static func display() -> String:

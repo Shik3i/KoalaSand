@@ -6,6 +6,8 @@ signal save_requested(world_name: String)
 signal return_to_menu_requested
 signal exit_requested
 signal diagnostics_requested
+signal reset_tutorial_requested
+signal controls_requested
 
 var world_name := "World"
 var _name_input: LineEdit
@@ -13,6 +15,9 @@ var _autosave: SpinBox
 var _ui_scale: SpinBox
 var _reduced_motion: CheckBox
 var _screen_shake: CheckBox
+var _tutorial_hints: CheckBox
+var _hover_toggle: CheckBox
+var _tooltip_delay: SpinBox
 var _window_mode: OptionButton
 var _master_audio: HSlider
 var _audio_sliders: Dictionary = {}
@@ -43,6 +48,9 @@ func settings() -> Dictionary:
 		"ui_scale": _ui_scale.value,
 		"reduced_motion": _reduced_motion.button_pressed,
 		"screen_shake": _screen_shake.button_pressed,
+		"tutorial_hints": _tutorial_hints.button_pressed,
+		"hover_toggle": _hover_toggle.button_pressed,
+		"tooltip_delay": _tooltip_delay.value,
 		"window_mode": _window_mode.selected,
 		"master": _master_audio.value,
 		"ui": _audio_sliders.UI.value,
@@ -58,6 +66,9 @@ func apply_settings(values: Dictionary) -> void:
 	_ui_scale.value = float(values.get("ui_scale", 1.0))
 	_reduced_motion.button_pressed = bool(values.get("reduced_motion", false))
 	_screen_shake.button_pressed = bool(values.get("screen_shake", true))
+	_tutorial_hints.button_pressed = bool(values.get("tutorial_hints", true))
+	_hover_toggle.button_pressed = bool(values.get("hover_toggle", true))
+	_tooltip_delay.value = float(values.get("tooltip_delay", 0.4))
 	_window_mode.select(clampi(int(values.get("window_mode", 0)), 0, 2))
 	_master_audio.value = float(values.get("master", values.get("master_audio", 1.0)))
 	for category: String in _audio_sliders:
@@ -98,7 +109,13 @@ func _build_ui() -> void:
 		var slider := _volume_slider(); _audio_sliders[category] = slider; column.add_child(_labeled("%s volume" % category, slider))
 	_reduced_motion = CheckBox.new(); _reduced_motion.text = "Reduced motion"; column.add_child(_reduced_motion)
 	_screen_shake = CheckBox.new(); _screen_shake.text = "Screen shake"; _screen_shake.button_pressed = true; column.add_child(_screen_shake)
-	var controls := Label.new(); controls.text = "Planning Pause keeps camera and construction controls active."; controls.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; controls.theme_type_variation = "CaptionLabel"; column.add_child(controls)
+	_hover_toggle = CheckBox.new(); _hover_toggle.text = "Hover uses toggle instead of hold"; _hover_toggle.button_pressed = true; column.add_child(_hover_toggle)
+	_tutorial_hints = CheckBox.new(); _tutorial_hints.text = "Guided tutorial hints"; _tutorial_hints.button_pressed = true; column.add_child(_tutorial_hints)
+	_tooltip_delay = SpinBox.new(); _tooltip_delay.min_value = 0.0; _tooltip_delay.max_value = 1.5; _tooltip_delay.step = 0.1; _tooltip_delay.value = 0.4; _tooltip_delay.suffix = " s"; column.add_child(_labeled("Tooltip delay", _tooltip_delay))
+	var tutorial_row := HBoxContainer.new(); column.add_child(tutorial_row)
+	var reset_tutorial := Button.new(); reset_tutorial.theme_type_variation = "QuietButton"; reset_tutorial.text = "Reset tutorial hints"; reset_tutorial.tooltip_text = "Restarts only guidance. Your world and progression are not changed."; reset_tutorial.pressed.connect(func(): reset_tutorial_requested.emit()); tutorial_row.add_child(reset_tutorial)
+	var controls := Button.new(); controls.theme_type_variation = "QuietButton"; controls.text = "View current controls"; controls.pressed.connect(func(): controls_requested.emit()); tutorial_row.add_child(controls)
+	var planning_note := Label.new(); planning_note.text = "Planning Pause keeps camera, inspection and construction active while physics is frozen."; planning_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; planning_note.theme_type_variation = "CaptionLabel"; column.add_child(planning_note)
 	var support := Button.new(); support.theme_type_variation = "QuietButton"; support.text = "Export local diagnostics"; support.tooltip_text = "Creates a local ZIP. Nothing is uploaded."; support.pressed.connect(func(): diagnostics_requested.emit()); column.add_child(support)
 	var version := Label.new(); version.text = BuildInfo.display(); version.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; version.theme_type_variation = "CaptionLabel"; column.add_child(version)
 	column.add_child(HSeparator.new())

@@ -12,6 +12,10 @@ static func collect(materials: MaterialRegistry, world: Variant, blueprints: Blu
 		if material_id == 0: continue
 		var material := materials.get_definition(material_id)
 		rows.append(_row(material.display_name, "Material", true, true, true, true, codex.entries.has("material:%s" % material.key), true, false, material.category in [MaterialDefinition.Category.LIQUID, MaterialDefinition.Category.GAS, MaterialDefinition.Category.MOLTEN] or material.flammability > 0, "None", false, "PASS"))
+	for definition: Dictionary in world.get_automation_definitions():
+		var help_definition := definition.duplicate(true); help_definition.key = str(definition.id)
+		var help := HelpCatalog.automation(help_definition, not bool(definition.unlocked))
+		rows.append(_row(str(definition.display_name), "Automation", true, true, true, HelpCatalog.valid(help), codex.entries.has("concept:automation"), true, false, true, "Signal value and label supplement color", false, "PASS"))
 	for blueprint_id: Variant in blueprints.library:
 		var blueprint := blueprints.load_blueprint(str(blueprint_id)); rows.append(_row(blueprint.display_name, "Example Blueprint", true, true, true, true, codex.entries.has("blueprint:%s" % blueprint.blueprint_id), true, false, false, "None", false, "PASS"))
 	for tool in ["Select","Pipette","Dig","Cut","Ignite","Deconstruct","Blueprint Select"]: rows.append(_row(tool, "Action Tool", true, true, tool in ["Dig","Cut","Ignite","Deconstruct"], true, false, false, false, true, "None", false, "PASS"))
@@ -19,7 +23,7 @@ static func collect(materials: MaterialRegistry, world: Variant, blueprints: Blu
 	for overlay: Dictionary in overlays:
 		var shipped := bool(overlay.shipped)
 		rows.append(_row(str(overlay.name), "Overlay", shipped, shipped, shipped, shipped, false, false, false, shipped, "Pattern and labels supplement color" if shipped else "Hidden from player overlay menu", not shipped, "PASS" if shipped else "DEV ONLY · NOT SHIPPED"))
-	for panel in ["Main Menu","New Game","Build Catalog","Research","Codex","Map","Statistics","Inspector","Planning Pause","Settings","Save Browser","Experiments","Diagnostics Export"]: rows.append(_row(panel, "Panel", true, true, true, true, panel == "Codex", panel == "Inspector", false, true, "Keyboard focus and scalable text", false, "PASS"))
+	for panel in ["Main Menu","New Game","Build Catalog","Research","Codex","Map","Statistics","Inspector","Planning Pause","Controls","Settings","Save Browser","Blueprint Library","Experiments","Diagnostics Export"]: rows.append(_row(panel, "Panel", true, true, true, true, panel == "Codex", panel == "Inspector", false, true, "Keyboard focus and scalable text", false, "PASS"))
 	for index in 10: rows.append(_row("Milestone %02d" % (index + 1), "Milestone", true, true, false, true, false, false, false, true, "Text criteria supplement status color", false, "PASS"))
 	return rows
 

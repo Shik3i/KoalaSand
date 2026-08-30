@@ -138,6 +138,7 @@ var _phase12_view := ""
 var _phase13_view := ""
 var _phase135_view := ""
 var _phase136_view := ""
+var _phase139_view := ""
 var _realistic_max_factory_benchmark := false
 var _owner_package_smoke := false
 var _validate_seeds := 0
@@ -172,6 +173,7 @@ var _planning_paused := false
 var _pause_menu_was_planning := false
 var _last_milestones: Dictionary = {}
 var _phase135_capture_inspector: Dictionary = {}
+var _automation_placement_type := 0
 
 
 func _ready() -> void:
@@ -232,15 +234,17 @@ func _ready() -> void:
 	factory_hud.initialize(world)
 	factory_hud.configure_mode(_game_session.preset_id)
 	factory_hud.tool_selected.connect(_on_factory_tool_selected)
-	factory_hud.research_requested.connect(_toggle_research)
+	factory_hud.research_requested.connect(_request_research)
 	factory_hud.overlay_selected.connect(_on_overlay_selected)
 	factory_hud.map_requested.connect(_toggle_world_map)
 	factory_hud.codex_requested.connect(_open_codex)
 	factory_hud.experiments_requested.connect(_toggle_experiments)
 	factory_hud.blueprints_requested.connect(_toggle_blueprint_library)
 	factory_hud.diagnostics_requested.connect(_export_diagnostics)
+	factory_hud.planning_pause_requested.connect(func(): _set_planning_paused(not _planning_paused))
 	_create_phase135_player_ui()
 	_create_pause_menu()
+	factory_hud.bind_help_root($HUD)
 	research_tree.initialize(world)
 	research_tree.theme = factory_hud.theme
 	if _phase6_view == "research":
@@ -269,6 +273,7 @@ func _ready() -> void:
 		_show_new_game_screen()
 	_configure_phase135_view()
 	_configure_phase136_view()
+	_configure_phase139_view()
 	if _owner_package_smoke:
 		call_deferred("_run_owner_package_smoke")
 	_update_brush_preview()
@@ -277,6 +282,11 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	if _player_session_active and _character != null:
+		if Input.is_action_pressed(&"move_left") or Input.is_action_pressed(&"move_right"):
+			factory_hud.demonstrate_onboarding("CHARACTER_INTRO")
+		if Input.is_action_pressed(&"jetpack"):
+			factory_hud.demonstrate_onboarding("JETPACK")
 	var async_result := _save_manager.poll_async_save()
 	if async_result.has("ok") and not bool(async_result.get("pending", false)) and factory_hud != null:
 		factory_hud.show_notification("Autosave complete" if bool(async_result.get("ok", false)) else "Autosave failed: %s" % str(async_result.get("error", "UNKNOWN")))
@@ -398,6 +408,7 @@ func _handle_key(event: InputEventKey) -> void:
 		return
 	if event.is_action_pressed(&"planning_pause"):
 		_set_planning_paused(not _planning_paused)
+		factory_hud.demonstrate_onboarding("PLANNING_PAUSE")
 		return
 	if event.is_action_pressed(&"open_codex"):
 		_open_codex("")
@@ -458,6 +469,7 @@ func _handle_key(event: InputEventKey) -> void:
 		_info_mode = not _info_mode
 		factory_hud.set_info_mode(_info_mode)
 		overlay.set_info_mode(_info_mode, _expanded_chunk_rect(_visible_chunk_rect, 1))
+		factory_hud.demonstrate_onboarding("INSPECT")
 		return
 	if event.is_action_pressed(&"blueprint"):
 		if _blueprint_selection_active:
@@ -544,9 +556,11 @@ func _handle_key(event: InputEventKey) -> void:
 				return
 	if event.is_action_pressed(&"build_catalog"):
 		factory_hud.toggle_catalog()
+		factory_hud.demonstrate_onboarding("OPEN_CATALOG")
 		return
 	if event.is_action_pressed(&"open_research"):
 		_toggle_research()
+		factory_hud.demonstrate_onboarding("RESEARCH")
 		return
 	if event.is_action_pressed(&"overlay_selector"):
 		_on_overlay_selected(0 if map_overlay_renderer.mode != MapOverlayRenderer.Mode.NONE else MapOverlayRenderer.Mode.MAGNETIC_FIELD)
@@ -618,11 +632,13 @@ func _handle_key(event: InputEventKey) -> void:
 func _handle_mouse_button(event: InputEventMouseButton) -> void:
 	if event.button_index == MOUSE_BUTTON_MIDDLE:
 		_panning = event.pressed and bool(_game_session.capabilities.get("free_camera", true)) and not _pointer_over_ui()
+		if _panning: factory_hud.demonstrate_onboarding("MOVE_CAMERA")
 		return
 	if _pointer_over_ui():
 		return
 	if _character != null and not _character.can_interact(_mouse_world_cell()):
 		if event.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT]:
+			factory_hud.show_context_hint("build_range", "Out of reach · move the koala closer or build inside the visible range.")
 			return
 	if automation_renderer.wiring_mode and event.pressed and not _pointer_over_ui():
 		if event.button_index == MOUSE_BUTTON_RIGHT:
@@ -727,6 +743,14 @@ func _paint_line(from_cell: Vector2i, to_cell: Vector2i) -> void:
 func _handle_wiring_click(cell: Vector2i) -> void:
 	var component_id := automation_renderer.pick_component(cell)
 	if component_id <= 0:
+		if _automation_placement_type > 0:
+			if _submit_world_command(WorldCommand.Type.CREATE_AUTOMATION_COMPONENT, {"type_id":_automation_placement_type, "x":cell.x, "y":cell.y, "configuration":_default_automation_config(_automation_placement_type, cell)}):
+				component_id = int(_command_bus.last_result)
+				automation_renderer.select_component(component_id)
+				automation_renderer.sync_visible(_expanded_chunk_rect(_visible_chunk_rect, 1), true)
+				_update_automation_inspector()
+				factory_hud.demonstrate_onboarding("BUILD_COMPONENT")
+				return
 		automation_renderer.invalid_target = true
 		automation_renderer.queue_redraw()
 		return
@@ -881,7 +905,12 @@ func _connect_build_toolbar() -> void:
 
 
 func _on_factory_tool_selected(tool: Dictionary) -> void:
-	match str(tool.get("kind", "")):
+	factory_hud.demonstrate_onboarding("OPEN_CATALOG")
+	var tool_kind := str(tool.get("kind", ""))
+	if tool_kind not in ["wiring", "automation"]:
+		_automation_placement_type = 0
+		automation_renderer.set_wiring_mode(false)
+	match tool_kind:
 		"select":
 			build_structure_type = 0; remove_structure_mode = false; _subsurface_depth = -1
 		"pipette":
@@ -904,9 +933,15 @@ func _on_factory_tool_selected(tool: Dictionary) -> void:
 			_select_terrain(BrushMode.IGNITE)
 		"remove":
 			_select_remove()
-		"wiring", "automation":
+		"wiring":
+			_automation_placement_type = 0
 			automation_renderer.set_wiring_mode(true)
 			automation_inspector.visible = true
+		"automation":
+			_automation_placement_type = int(tool.id)
+			automation_renderer.set_wiring_mode(true)
+			automation_inspector.visible = true
+			factory_hud.show_notification("Place %s · then connect output to input" % str(tool.name), "INFO")
 	_update_status()
 
 func _place_subsurface_drag(end_cell: Vector2i) -> void:
@@ -1200,6 +1235,8 @@ func _submit_world_command(type: int, payload: Dictionary) -> bool:
 		elif type == WorldCommand.Type.IGNITE:
 			if _audio_mixer != null: _audio_mixer.play_world(&"igniter", Vector2(cell) * renderer.cell_pixel_size, 0.8, "Character")
 			if _feedback_renderer != null: _feedback_renderer.emit(&"ignite", cell)
+	if type in [WorldCommand.Type.PLACE_STRUCTURE, WorldCommand.Type.PLACE_CONVEYOR_LINE, WorldCommand.Type.PLACE_PIPE_LINE, WorldCommand.Type.PLACE_SUBSURFACE_CHANNEL, WorldCommand.Type.CREATE_AUTOMATION_COMPONENT]:
+		factory_hud.demonstrate_onboarding("BUILD_COMPONENT")
 	return true
 
 func _inverse_before_command(type: int, payload: Dictionary, sequence: int, tick: int) -> CommandBatch:
@@ -1308,6 +1345,7 @@ func _toggle_world_map() -> void:
 				_character.center_camera()
 		)
 		_world_map_panel.initialize(world, _game_session.preset_id)
+		factory_hud.bind_help_root(_world_map_panel)
 		_world_map_panel.visible = false
 		_world_map_panel.closed.connect(func() -> void: factory_hud.set_external_modal("map", false))
 	if _world_map_panel.visible: _world_map_panel.close()
@@ -1325,9 +1363,12 @@ func _on_unlock_requested(research_id: String) -> void:
 				name = definition.display_name
 				break
 		_unlock_notice = "UNLOCKED · %s" % name.to_upper()
+		factory_hud.show_notification("Research unlocked · %s · new Components are marked in the Catalog" % name, "SUCCESS")
+		factory_hud.demonstrate_onboarding("RESEARCH")
 		structure_renderer.sync_visible(_expanded_chunk_rect(_visible_chunk_rect, 1), true)
 	else:
 		_unlock_notice = "RESEARCH REQUIREMENTS NOT MET"
+		factory_hud.show_notification("Research not ready · select the node to see exact prerequisites and material costs", "WARNING")
 	research_tree.queue_redraw()
 	_update_status()
 
@@ -1559,6 +1600,9 @@ func _build_showcase() -> void:
 
 
 func _phase11_preset_for_view() -> GameModeCapabilities.Preset:
+	if not _phase139_view.is_empty():
+		if _phase139_view.begins_with("character-"): return GameModeCapabilities.Preset.CHARACTER
+		return GameModeCapabilities.Preset.FACTORY
 	if not _phase13_view.is_empty():
 		return GameModeCapabilities.Preset.CREATIVE
 	if _phase12_view == "character-sandbox":
@@ -1777,6 +1821,22 @@ func _configure_phase136_capture_source() -> void:
 		_: _phase13_view = "full-game"
 
 
+func _configure_phase139_capture_source() -> void:
+	var source: String = str({
+		"new-game":"new-game", "mode-cards":"mode-character", "empty-saves":"new-game",
+		"character-first-move":"character-spawn", "character-jetpack-hint":"character-spawn", "character-dig-hint":"character-spawn", "character-build-highlight":"character-hover-build",
+		"factory-camera-hint":"factory-start", "factory-build-highlight":"factory-start",
+		"component-tooltip":"build-catalog", "material-tooltip":"build-catalog", "disabled-tooltip":"build-catalog", "build-catalog-first-open":"build-catalog",
+		"research-first-open":"research", "research-ready":"research",
+		"blueprint-example-help":"blueprints", "basic-screen-guidance":"blueprints", "sluice-guidance":"blueprints", "furnace-guidance":"blueprints", "empty-blueprints":"blueprints",
+		"inspector-first-use":"inspector-screen", "inspector-blocker":"inspector-screen", "planning-pause-hint":"planning-pause",
+		"current-goal":"current-goal", "goal-help":"current-goal", "experiments":"experiments", "codex-help":"codex-component", "controls-help":"full-game-factory",
+		"tooltip-1600x900":"build-catalog", "tooltip-2560x1440":"build-catalog",
+	}.get(_phase139_view, "full-game-factory"))
+	_phase136_view = source
+	_configure_phase136_capture_source()
+
+
 func _configure_phase135_view() -> void:
 	if _phase135_view.is_empty():
 		return
@@ -1866,6 +1926,35 @@ func _configure_phase136_view() -> void:
 			diagnostics_visible = true
 			diagnostics_panel.visible = true
 	factory_hud.show_alert("")
+
+
+func _configure_phase139_view() -> void:
+	if _phase139_view.is_empty():
+		return
+	match _phase139_view:
+		"character-first-move": factory_hud.preview_onboarding_step("CHARACTER_INTRO")
+		"character-jetpack-hint": factory_hud.preview_onboarding_step("JETPACK")
+		"character-dig-hint": factory_hud.preview_onboarding_step("DIG")
+		"character-build-highlight": factory_hud.preview_onboarding_step("OPEN_CATALOG")
+		"factory-camera-hint": factory_hud.preview_onboarding_step("MOVE_CAMERA")
+		"factory-build-highlight": factory_hud.preview_onboarding_step("OPEN_CATALOG")
+		"component-tooltip": factory_hud.preview_tooltip(HelpCatalog.component(41, _structure_definitions.get(41, {})), "catalog")
+		"material-tooltip": factory_hud.preview_tooltip(HelpCatalog.material(materials.get_definition(materials.get_id(&"raw_sand"))), "catalog")
+		"disabled-tooltip": factory_hud.preview_tooltip(HelpCatalog.component(46, _structure_definitions.get(46, {}), true), "catalog")
+		"build-catalog-first-open":
+			if not factory_hud.modal_open(): factory_hud.toggle_catalog()
+			factory_hud.preview_onboarding_step("OPEN_CATALOG")
+		"research-ready": factory_hud.show_notification("Research ready · choose an affordable node to unlock new Components", "SUCCESS")
+		"basic-screen-guidance": _blueprint_panel.show_search("screen")
+		"sluice-guidance": _blueprint_panel.show_search("sluice")
+		"furnace-guidance": _blueprint_panel.show_search("furnace")
+		"empty-blueprints": _blueprint_panel.show_search("no such blueprint")
+		"inspector-first-use": factory_hud.preview_onboarding_step("INSPECT")
+		"planning-pause-hint": factory_hud.preview_onboarding_step("PLANNING_PAUSE")
+		"goal-help": factory_hud.preview_tooltip({"title":"How to approach this goal", "description":"Use physical outcomes, Inspector readings, Experiments and editable example Blueprints. No exact layout is required.", "codex_id":"concept:construction"}, "goal_help")
+		"codex-help": _open_codex("concept:construction")
+		"controls-help": factory_hud.toggle_controls()
+		"tooltip-1600x900", "tooltip-2560x1440": factory_hud.preview_tooltip(HelpCatalog.component(41, _structure_definitions.get(41, {})), "catalog")
 
 
 func _build_phase11_showcase() -> void:
@@ -2029,6 +2118,7 @@ func _create_character() -> void:
 	_character.z_index = 34
 	add_child(_character)
 	_character.initialize(world, camera, _phase11_character_cell, renderer.cell_pixel_size, _command_bus)
+	_apply_character_accessibility(_pause_menu.settings() if _pause_menu != null else {})
 	if _phase11_view in ["jetpack", "hover", "character-hover"]:
 		_character.position_milli -= Vector2i(0, 22 * KoalaCharacterController.MILLI)
 		_character.position = Vector2(_character.position_milli) / KoalaCharacterController.MILLI * renderer.cell_pixel_size
@@ -2088,6 +2178,7 @@ func _update_character_hud() -> void:
 func _show_new_game_screen() -> void:
 	if _new_game_screen != null:
 		return
+	factory_hud.set_gameplay_hud_visible(false)
 	_new_game_screen = NewGameScreen.new()
 	_new_game_screen.name = "NewGameScreen"
 	$HUD.add_child(_new_game_screen)
@@ -2111,6 +2202,7 @@ func _start_phase11_game(preset_id: int, seed: int, world_name: String) -> void:
 	if _new_game_screen != null:
 		_new_game_screen.queue_free()
 		_new_game_screen = null
+	factory_hud.set_gameplay_hud_visible(true)
 	_regenerate_world()
 	_visibility_renderer.initialize(world, KoalaCharacterController.VISIBILITY_OWNER_ID, renderer.cell_pixel_size)
 	_visibility_renderer.set_discovery_enabled(_game_session.visibility_policy == GameModeCapabilities.VisibilityPolicy.DISCOVERED)
@@ -2128,6 +2220,8 @@ func _create_pause_menu() -> void:
 	_pause_menu.return_to_menu_requested.connect(_save_and_return_to_menu)
 	_pause_menu.exit_requested.connect(_save_and_exit)
 	_pause_menu.diagnostics_requested.connect(_export_diagnostics)
+	_pause_menu.reset_tutorial_requested.connect(_reset_tutorial)
+	_pause_menu.controls_requested.connect(factory_hud.toggle_controls)
 
 func _create_phase135_player_ui() -> void:
 	_codex_panel = CodexPanel.new(); _codex_panel.name = "PhysicsCodex"; $HUD.add_child(_codex_panel); _codex_panel.initialize(_physics_codex)
@@ -2200,6 +2294,12 @@ func _toggle_blueprint_library() -> void:
 	if _blueprint_panel.visible: _blueprint_panel.close()
 	else: _blueprint_panel.open()
 	factory_hud.set_external_modal("blueprints", _blueprint_panel.visible)
+	if _blueprint_panel.visible: factory_hud.demonstrate_onboarding("BLUEPRINT")
+
+
+func _request_research() -> void:
+	_toggle_research()
+	factory_hud.demonstrate_onboarding("RESEARCH")
 
 func _select_library_blueprint(blueprint: BlueprintDefinition) -> void:
 	_blueprints.copy_to_clipboard(blueprint)
@@ -2227,6 +2327,7 @@ func _set_planning_paused(paused: bool) -> void:
 	factory_hud.set_planning_paused(paused)
 	if _audio_mixer != null: _audio_mixer.set_planning_paused(paused)
 	factory_hud.show_notification("Planning Pause · physics frozen" if paused else "Simulation resumed")
+	if paused: factory_hud.demonstrate_onboarding("PLANNING_PAUSE")
 
 func _pipette_at_cursor() -> void:
 	var cell := _mouse_world_cell()
@@ -2296,12 +2397,20 @@ func _open_pause_menu() -> void:
 func _resume_from_pause() -> void:
 	_pause_menu.close()
 	KoalaSandTheme.apply_preferences($HUD, float(_pause_menu.settings().get("ui_scale", 1.0)), bool(_pause_menu.settings().get("reduced_motion", false)))
+	_apply_character_accessibility(_pause_menu.settings())
+	factory_hud.set_onboarding_enabled(bool(_pause_menu.settings().get("tutorial_hints", true)))
+	factory_hud.set_help_preferences(float(_pause_menu.settings().get("tooltip_delay", 0.4)), bool(_pause_menu.settings().get("reduced_motion", false)))
 	clock.set_paused(_pause_menu_was_planning)
 	if _character != null: _character.set_simulation_paused(_pause_menu_was_planning)
 	if _audio_mixer != null:
 		_audio_mixer.set_category_volumes(_pause_menu.settings())
 		_audio_mixer.set_planning_paused(_pause_menu_was_planning)
 	if _feedback_renderer != null: _feedback_renderer.reduced_motion = bool(_pause_menu.settings().get("reduced_motion", false))
+
+
+func _reset_tutorial() -> void:
+	factory_hud.reset_onboarding()
+	factory_hud.show_notification("Tutorial hints reset · world progress unchanged", "SUCCESS")
 
 
 func _save_context() -> Dictionary:
@@ -2364,6 +2473,9 @@ func _continue_world(saved_world_name: String) -> void:
 	if context.get("settings", null) is Dictionary:
 		_pause_menu.apply_settings(context.settings)
 		KoalaSandTheme.apply_preferences($HUD, float(context.settings.get("ui_scale", 1.0)), bool(context.settings.get("reduced_motion", false)))
+		_apply_character_accessibility(context.settings)
+		factory_hud.set_onboarding_enabled(bool(context.settings.get("tutorial_hints", true)))
+		factory_hud.set_help_preferences(float(context.settings.get("tooltip_delay", 0.4)), bool(context.settings.get("reduced_motion", false)))
 	camera.position = context.get("camera_position", camera.position)
 	zoom_index = clampi(int(context.get("zoom_index", zoom_index)), 0, ZOOM_LEVELS.size() - 1)
 	_set_camera_zoom_index(zoom_index)
@@ -2381,9 +2493,21 @@ func _continue_world(saved_world_name: String) -> void:
 	if _new_game_screen != null:
 		_new_game_screen.queue_free()
 		_new_game_screen = null
+	factory_hud.set_gameplay_hud_visible(true)
 	clock.set_speed(1)
 	if bool(restored.get("recovered_from_backup", false)):
 		factory_hud.show_notification("Recovered world from backup")
+
+
+func _apply_character_accessibility(settings: Dictionary) -> void:
+	if _character == null:
+		return
+	var preferences := CharacterAccessibilityPreferences.new()
+	preferences.hover_toggle = bool(settings.get("hover_toggle", true))
+	preferences.reduced_motion = bool(settings.get("reduced_motion", false))
+	preferences.screen_shake = bool(settings.get("screen_shake", true))
+	preferences.ui_scale = clampf(float(settings.get("ui_scale", 1.0)), 0.75, 2.0)
+	_character.apply_accessibility_preferences(preferences)
 
 
 func _delete_world(saved_world_name: String) -> void:
@@ -3682,6 +3806,8 @@ func _parse_capture_arguments() -> void:
 			_phase135_view = argument.trim_prefix("--phase135-view=")
 		elif argument.begins_with("--phase136-view="):
 			_phase136_view = argument.trim_prefix("--phase136-view=")
+		elif argument.begins_with("--phase139-view="):
+			_phase139_view = argument.trim_prefix("--phase139-view=")
 		elif argument.begins_with("--validate-seeds="):
 			_validate_seeds = clampi(argument.trim_prefix("--validate-seeds=").to_int(), 1, 1000000)
 		elif argument.begins_with("--validate-seed-start="):
@@ -3727,6 +3853,8 @@ func _parse_capture_arguments() -> void:
 		_configure_phase135_capture_source()
 	if not _phase136_view.is_empty():
 		_configure_phase136_capture_source()
+	if not _phase139_view.is_empty():
+		_configure_phase139_capture_source()
 	if not _capture_path.is_empty() and _capture_tick < 0:
 		_capture_tick = 30
 	if _runtime_benchmark_ticks >= 0:

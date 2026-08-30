@@ -52,6 +52,16 @@ Launch opens Main Menu with Continue, saved-world selection/Load, Delete confirm
 - UI scale is reapplied across themed HUD descendants when settings are accepted or restored from a save.
 - World Map, Codex, Blueprint Library and Experiments expose explicit close actions and keyboard hints.
 
+## Phase 13.9 help language
+
+- One `ContextTooltipLayer` renders all rich help. Stock Godot tooltip popups are cleared when a control is registered.
+- Tooltip hierarchy is title, physical purpose, live state, unavailable reason, current shortcut, limitation, then optional Codex action.
+- Non-obvious icon-only controls require tooltip metadata and an accessible description. Obvious text buttons do not receive redundant prose.
+- `GuidedHighlightLayer` follows a live `Control`, not a coordinate. Its static Reduced-Motion form remains visible without pulsing.
+- Knowledge completes only from the relevant demonstrated action and persists in the save. Guidance can be disabled or reset independently of progression.
+- First failures teach the physical cause in normal language. Later inspection remains available without toast spam.
+- Transient messages use the shared three-entry, duplicate-collapsing toast stack.
+
 ## Audio presentation policy
 
 - Procedural output is signed 16-bit PCM at `32 kHz`; looping sources are periodic and seam-safe.

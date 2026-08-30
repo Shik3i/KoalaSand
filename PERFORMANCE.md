@@ -810,3 +810,19 @@ The Dense Synthetic Megafactory deliberately places `15,600` structure tiles and
 The bounded stability smoke ran Realistic Maximum Factory for `699.990 s` (`11m 39.990s`), rendered `183,379` frames and completed `42,044` ticks. Result: exit `0`, `262.0 FPS`, `4.167 ms` p95, `4.762 ms` p99, `35.798 ms` worst, no `SIGSEGV`, no `0xC0000374` and no additional project error. The recurring root-certificate-store diagnostic remained nonfatal.
 
 Full correctness: `26` scripts passed in `30.224 s`, including the eight-worker reactive-cell regression and `57` Phase 13.8 checks. Native Release build and Phase 9 render/simulation regression passed. Automated audio output was disabled; mixer generation, pool bounds, 16-bit format, loop bounds, seam delta and safe category headroom were verified structurally.
+
+## Phase 13.9 final FTUE gate — 2026-08-30
+
+Same host, renderer and strictly `Dummy` audio. Phase 13.9 adds UI guidance only; the runtime sanity gate confirms inactive tooltip/highlight systems do not compromise representative play.
+
+| Runtime case | FPS | Frame average | Frame p95 | Frame p99 | Worst frame |
+|---|---:|---:|---:|---:|---:|
+| Character | `287.3` | `3.470 ms` | `4.762 ms` | `7.194 ms` | `13.465 ms` |
+| Factory | `330.7` | `3.004 ms` | `3.333 ms` | `5.695 ms` | `16.548 ms` |
+| Creative | `336.7` | `2.954 ms` | `3.333 ms` | `5.082 ms` | `16.523 ms` |
+| Realistic Maximum Factory | `192.7` | `5.185 ms` | `5.556 ms` | `8.466 ms` | `11.471 ms` |
+| Dense Synthetic Megafactory | `43.7` | `22.813 ms` | `25.000 ms` | `27.905 ms` | `28.965 ms` |
+
+All four representative fixtures exceed `100 FPS`. Dense Synthetic remains a disclosed out-of-scope stress bound with `15,600` structure tiles and `169,351` active-region cells.
+
+The required representative smoke ran Factory Mode for `599.983 s`, rendered `200,150` frames, completed `36,020` ticks and exited `0`: `333.6 FPS`, `2.998 ms` frame average, `3.333 ms` p95/p99, `16.664 ms` worst frame and `5.606 ms` worst simulation tick.

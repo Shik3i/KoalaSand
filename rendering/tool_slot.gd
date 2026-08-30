@@ -15,9 +15,13 @@ func configure(value: Dictionary, slot_page: int = 0, slot_index: int = 0, from_
 	index = slot_index
 	catalog_entry = from_catalog
 	text = "" if tool.is_empty() or not catalog_entry else str(tool.get("name", "?"))
-	tooltip_text = str(tool.get("name", "Empty slot"))
-	if bool(tool.get("locked", false)):
-		tooltip_text += "\nResearch required"
+	remove_meta("ux_tooltip_spec")
+	tooltip_text = ""
+	if not tool.is_empty():
+		var help := Dictionary(tool.get("help", {"title":str(tool.get("name", "Tool")), "description":"Select this player tool for physical world interaction."})).duplicate(true)
+		if bool(tool.get("locked", false)) and str(help.get("disabled_reason", "")).is_empty():
+			help.disabled_reason = "Requires Research before it can be selected."
+		HelpCatalog.attach(self, help)
 	disabled = bool(tool.get("locked", false))
 	queue_redraw()
 

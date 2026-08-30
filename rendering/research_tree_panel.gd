@@ -69,6 +69,7 @@ func _draw() -> void:
 	var font := ThemeDB.fallback_font
 	draw_string(font, Vector2(34, 39), "RESEARCH", HORIZONTAL_ALIGNMENT_LEFT, -1, 23, KoalaSandTheme.COLOR_ACCENT_BRIGHT)
 	draw_string(font, Vector2(34, 64), "Physical discoveries unlock new ways to shape matter.", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, KoalaSandTheme.COLOR_TEXT_SECONDARY)
+	draw_string(font, Vector2(360, 64), "UNLOCKED · AVAILABLE · LOCKED BY PREREQUISITE · bright cost = AFFORDABLE", HORIZONTAL_ALIGNMENT_LEFT, size.x - 580, 11, KoalaSandTheme.COLOR_INFO)
 	for definition: Dictionary in _definitions:
 		var child_rect := _screen_rect(definition.id)
 		for prerequisite: String in definition.prerequisites:
@@ -104,7 +105,7 @@ func _draw() -> void:
 	var button_color := Color("c98225") if bool(selected_state.get("available", false)) and bool(selected_state.get("affordable", false)) else Color("34464a")
 	draw_rect(button_rect, button_color, true)
 	draw_rect(button_rect, Color("f2b84b") if button_color.r > 0.5 else Color("607579"), false, 2.0)
-	var action := "UNLOCK NOW" if not bool(selected_state.get("unlocked", false)) else "UNLOCKED"
+	var action := "UNLOCKED" if bool(selected_state.get("unlocked", false)) else "UNLOCK NOW" if bool(selected_state.get("available", false)) and bool(selected_state.get("affordable", false)) else "NEEDS MATERIAL" if bool(selected_state.get("available", false)) else "NEEDS PREREQUISITE"
 	draw_string(font, button_rect.position + Vector2(22, 28), action, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("fff0c7") if button_color.r > 0.5 else Color("9eb0b2"))
 	draw_string(font, Vector2(size.x - 212, 39), "Wheel zoom  ·  Drag pan  ·  T close", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, KoalaSandTheme.COLOR_TEXT_SECONDARY)
 

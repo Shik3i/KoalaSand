@@ -24,6 +24,7 @@ func _ready() -> void:
 	var head := HBoxContainer.new(); column.add_child(head)
 	var title := Label.new(); title.text = "Blueprint library"; title.theme_type_variation = "ScreenTitleLabel"; title.size_flags_horizontal = Control.SIZE_EXPAND_FILL; head.add_child(title)
 	var close_button := Button.new(); close_button.theme_type_variation = "QuietButton"; close_button.text = "Close  [Esc]"; close_button.pressed.connect(close); head.add_child(close_button)
+	var guidance := Label.new(); guidance.text = "Blueprints copy ordinary Component layouts. They do not contain recipes, hidden processing or free matter. Select an example to place an editable physical assembly."; guidance.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; guidance.theme_type_variation = "SecondaryLabel"; column.add_child(guidance)
 	_search.placeholder_text = "Search example and player blueprints…"; _search.text_changed.connect(func(_q: String): refresh()); column.add_child(_search)
 	var scroll := ScrollContainer.new(); scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL; column.add_child(scroll)
 	scroll.add_child(_entries)
@@ -44,6 +45,11 @@ func open() -> void:
 func close() -> void:
 	KoalaSandTheme.hide_panel(self, func() -> void: closed.emit())
 
+
+func show_search(query: String) -> void:
+	_search.text = query
+	refresh()
+
 func refresh() -> void:
 	if library == null: return
 	for child in _entries.get_children(): child.queue_free()
@@ -56,7 +62,17 @@ func refresh() -> void:
 		var haystack := (blueprint.display_name + " " + blueprint.description).to_lower()
 		if not query.is_empty() and not haystack.contains(query): continue
 		var button := Button.new()
-		button.text = "%s   %s\n%s\n%d components · editable physical assembly" % ["EXAMPLE" if example else "PLAYER", blueprint.display_name, blueprint.description, blueprint.entries.size()]
+		button.text = "%s   %s\n%s\n%s\n%d Components · editable physical assembly" % ["EXAMPLE" if example else "PLAYER", blueprint.display_name, blueprint.description, _example_guidance(str(raw_id)), blueprint.entries.size()]
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.pressed.connect(func(): blueprint_selected.emit(blueprint))
 		_entries.add_child(button)
+	if _entries.get_child_count() == 0:
+		var empty := Label.new(); empty.text = "No blueprints match this search. Clear the search, or copy Components in the world and save the current copy below."; empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; empty.theme_type_variation = "SecondaryLabel"; _entries.add_child(empty)
+
+
+func _example_guidance(blueprint_id: String) -> String:
+	if "screen" in blueprint_id: return "LOOK FOR · Mesh aperture · Vibration Actuator · material path"
+	if "sluice" in blueprint_id or "wet" in blueprint_id: return "LOOK FOR · Water direction → · Riffles · concentrate zone · tailings path"
+	if "furnace" in blueprint_id: return "LOOK FOR · fuel · air opening · heated chamber · Refractory walls"
+	if "vessel" in blueprint_id or "boiler" in blueprint_id: return "LOOK FOR · container geometry · heat path · real Water"
+	return "ORDINARY LAYOUT · no hidden machine behavior"

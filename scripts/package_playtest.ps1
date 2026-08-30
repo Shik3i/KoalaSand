@@ -70,7 +70,7 @@ if (Test-Path -LiteralPath $packageRoot) { Remove-Item -LiteralPath $packageRoot
 if (Test-Path -LiteralPath $archivePath) { Remove-Item -LiteralPath $archivePath -Force }
 New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
 
-& (Join-Path $repoRoot 'scripts\godot.ps1') --headless --path $repoRoot --export-release 'Windows Desktop' (Join-Path $packageRoot 'KoalaSand.exe')
+& (Join-Path $repoRoot 'scripts\godot.ps1') -MuteAudio --headless --path $repoRoot --export-release 'Windows Desktop' (Join-Path $packageRoot 'KoalaSand.exe')
 if ($LASTEXITCODE -ne 0) { throw "Godot export failed: $LASTEXITCODE" }
 
 Copy-Item -LiteralPath (Join-Path $repoRoot 'README-PLAYTEST.txt') -Destination $packageRoot
