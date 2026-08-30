@@ -118,6 +118,8 @@ func _run() -> void:
 			icon_only_total += 1
 			if not node.has_meta("accessibility_description") and not node.has_meta("ux_tooltip_spec"): icon_only_missing += 1
 	_check(icon_only_total > 0 and icon_only_missing == 0, "all icon-only HUD controls expose help or accessibility description")
+	var hud_source := FileAccess.get_file_as_string("res://rendering/factory_hud.gd")
+	_check(hud_source.contains("func refresh_unlocks()") and hud_source.contains("NEW · "), "Research unlocks refresh Catalog state and surface NEW Components")
 	var pause := PauseMenu.new(); root.add_child(pause); await process_frame
 	pause.apply_settings({"tutorial_hints":false, "tooltip_delay":0.7, "hover_toggle":false, "reduced_motion":true, "ui_scale":1.5})
 	var help_settings := pause.settings()

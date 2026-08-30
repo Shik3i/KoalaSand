@@ -26,7 +26,7 @@ Guidance never freezes play, places no invisible helper structure and never pres
 
 `tests/phase139_ftue.gd` validates representative tooltip content, Component/material/Automation coverage, disabled explanations, Codex deep links, dynamic rebinding, mode sequence completion, persistence, reset, disable, legacy migration, highlight input transparency, Reduced Motion, bounded toasts, icon-only controls, viewport clamping and the capture contract.
 
-Final gate: `328` checks. The generated audit contains `148` rows: `136` shipped player-facing surfaces pass and `12` explicitly excluded developer-only surfaces remain out of the player build. Coverage includes all `40` shipped player-facing Components (`46` Component rows including `6` developer-only entries), `27` non-empty materials and `24` Automation definitions.
+Final gate: `329` checks. The generated audit contains `148` rows: `136` shipped player-facing surfaces pass and `12` explicitly excluded developer-only surfaces remain out of the player build. Coverage includes all `40` shipped player-facing Components (`46` Component rows including `6` developer-only entries), `27` non-empty materials and `24` Automation definitions.
 
 The final representative smoke ran Factory Mode for `599.983 s`, completed `36,020` ticks and exited `0` at `333.6 FPS`; frame p95 was `3.333 ms`, worst frame `16.664 ms`, simulation worst `5.606 ms`. Character, Factory, Creative and Realistic Maximum all remained above the `100 FPS` target.
 

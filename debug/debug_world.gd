@@ -1371,6 +1371,7 @@ func _on_unlock_requested(research_id: String) -> void:
 		_unlock_notice = "UNLOCKED · %s" % name.to_upper()
 		factory_hud.show_notification("Research unlocked · %s · new Components are marked in the Catalog" % name, "SUCCESS")
 		factory_hud.demonstrate_onboarding("RESEARCH")
+		factory_hud.refresh_unlocks()
 		structure_renderer.sync_visible(_expanded_chunk_rect(_visible_chunk_rect, 1), true)
 	else:
 		_unlock_notice = "RESEARCH REQUIREMENTS NOT MET"

@@ -55,6 +55,7 @@ var _controls_panel: PanelContainer
 var _controls_text: Label
 var _help_targets: Dictionary = {}
 var _menu_visibility: Dictionary = {}
+var _new_tool_keys: Dictionary = {}
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -98,12 +99,16 @@ func activate_slot(number: int) -> void:
 func toggle_catalog() -> void:
 	_catalog.visible = not _catalog.visible
 	if _catalog.visible:
+		_refresh_catalog()
 		KoalaSandTheme.animate_in(_catalog)
 		_ui_state.open_modal("build_catalog")
 		_search.grab_focus()
 		demonstrate_onboarding("OPEN_CATALOG")
 	else:
 		_ui_state.close_modal("build_catalog")
+		if not _new_tool_keys.is_empty():
+			_new_tool_keys.clear()
+			_refresh_catalog()
 
 func set_page(page: int) -> void:
 	_active_page = wrapi(page, 0, PAGE_COUNT)
@@ -162,6 +167,41 @@ func demonstrate_onboarding(event_id: String) -> void:
 
 func onboarding_state() -> OnboardingState:
 	return _onboarding
+
+
+func refresh_unlocks() -> void:
+	if _world == null or not has_meta("catalog_tools"):
+		return
+	var structure_definitions := {}
+	for definition: Dictionary in _world.get_structure_definitions():
+		structure_definitions[int(definition.type_id)] = definition
+	var automation_definitions := {}
+	for definition: Dictionary in _world.get_automation_definitions():
+		automation_definitions[int(definition.type_id)] = definition
+	var refreshed_by_key := {}
+	var tools: Array = get_meta("catalog_tools")
+	for tool: Dictionary in tools:
+		var was_locked := bool(tool.get("locked", false))
+		if str(tool.kind) == "structure":
+			tool.locked = not _world.is_structure_unlocked(int(tool.id))
+			tool.help = HelpCatalog.component(int(tool.id), Dictionary(structure_definitions.get(int(tool.id), {})), bool(tool.locked))
+		elif str(tool.kind) == "automation":
+			var definition: Dictionary = Dictionary(automation_definitions.get(int(tool.id), {}))
+			tool.locked = not bool(definition.get("unlocked", false))
+			var help_definition := definition.duplicate(true); help_definition.key = str(definition.get("id", ""))
+			tool.help = HelpCatalog.automation(help_definition, bool(tool.locked))
+		if was_locked and not bool(tool.get("locked", false)):
+			_new_tool_keys[_tool_key(tool)] = true
+		refreshed_by_key[_tool_key(tool)] = tool
+	set_meta("catalog_tools", tools)
+	for page in PAGE_COUNT:
+		for index in SLOT_COUNT:
+			var current: Dictionary = _pages[page][index]
+			var key := _tool_key(current)
+			if refreshed_by_key.has(key):
+				_pages[page][index] = refreshed_by_key[key]
+	_refresh_slots()
+	_refresh_catalog()
 
 
 func set_help_preferences(tooltip_delay: float, reduced_motion: bool) -> void:
@@ -545,8 +585,13 @@ func _refresh_catalog() -> void:
 	for tool: Dictionary in get_meta("catalog_tools"):
 		if not query.is_empty() and not query in str(tool.name).to_lower() and not query in str(tool.category).to_lower(): continue
 		if _category_filter != "ALL" and _canonical_category(tool) != _category_filter: continue
-		var entry := ToolSlot.new(); entry.custom_minimum_size = Vector2(188, 76); entry.configure(tool, 0, 0, true); entry.text = "       %s\n       %s" % [tool.name, "Research required" if bool(tool.get("locked", false)) else _canonical_category(tool).capitalize()]; entry.alignment = HORIZONTAL_ALIGNMENT_LEFT; entry.pressed.connect(func(): tool_selected.emit(tool)); _catalog_grid.add_child(entry)
+		var entry := ToolSlot.new(); entry.custom_minimum_size = Vector2(188, 76); entry.configure(tool, 0, 0, true); entry.text = "       %s%s\n       %s" % ["NEW · " if _new_tool_keys.has(_tool_key(tool)) else "", tool.name, "Research required" if bool(tool.get("locked", false)) else _canonical_category(tool).capitalize()]; entry.alignment = HORIZONTAL_ALIGNMENT_LEFT; entry.pressed.connect(func(): tool_selected.emit(tool)); _catalog_grid.add_child(entry)
 		if _tooltip_layer != null: _tooltip_layer.bind(entry)
+
+
+func _tool_key(tool: Dictionary) -> String:
+	if tool.is_empty(): return ""
+	return "%s:%d" % [str(tool.get("kind", "")), int(tool.get("id", -1))]
 
 func _canonical_category(tool: Dictionary) -> String:
 	var source := str(tool.get("category", "")).to_lower()
