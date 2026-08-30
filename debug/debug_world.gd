@@ -287,6 +287,8 @@ func _process(delta: float) -> void:
 			factory_hud.demonstrate_onboarding("CHARACTER_INTRO")
 		if Input.is_action_pressed(&"jetpack"):
 			factory_hud.demonstrate_onboarding("JETPACK")
+		if Input.is_action_pressed(&"sprint") or Input.is_action_pressed(&"hover"):
+			factory_hud.demonstrate_onboarding("SPRINT_HOVER")
 	var async_result := _save_manager.poll_async_save()
 	if async_result.has("ok") and not bool(async_result.get("pending", false)) and factory_hud != null:
 		factory_hud.show_notification("Autosave complete" if bool(async_result.get("ok", false)) else "Autosave failed: %s" % str(async_result.get("error", "UNKNOWN")))
@@ -1237,6 +1239,10 @@ func _submit_world_command(type: int, payload: Dictionary) -> bool:
 			if _feedback_renderer != null: _feedback_renderer.emit(&"ignite", cell)
 	if type in [WorldCommand.Type.PLACE_STRUCTURE, WorldCommand.Type.PLACE_CONVEYOR_LINE, WorldCommand.Type.PLACE_PIPE_LINE, WorldCommand.Type.PLACE_SUBSURFACE_CHANNEL, WorldCommand.Type.CREATE_AUTOMATION_COMPONENT]:
 		factory_hud.demonstrate_onboarding("BUILD_COMPONENT")
+	if _game_session.preset_id == GameModeCapabilities.Preset.CHARACTER and type in [WorldCommand.Type.CREATIVE_ERASE, WorldCommand.Type.HARVEST]:
+		factory_hud.demonstrate_onboarding("DIG")
+	if _game_session.preset_id == GameModeCapabilities.Preset.CREATIVE and type in [WorldCommand.Type.CREATIVE_PAINT, WorldCommand.Type.CREATIVE_ERASE]:
+		factory_hud.demonstrate_onboarding("PAINT_OR_ERASE")
 	return true
 
 func _inverse_before_command(type: int, payload: Dictionary, sequence: int, tick: int) -> CommandBatch:

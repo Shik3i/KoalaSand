@@ -133,6 +133,9 @@ func _run() -> void:
 		_check(capture_script.contains("'%s'" % capture_name), "capture contract includes %s" % capture_name)
 	_check(capture_script.contains("'1600x900'") and capture_script.contains("'2560x1440'"), "capture contract includes both responsive tooltip resolutions")
 	_check(capture_script.contains("-MuteAudio"), "Phase 13.9 capture pipeline is silent")
+	var runtime_source := FileAccess.get_file_as_string("res://debug/debug_world.gd")
+	for runtime_event in ["CHARACTER_INTRO", "JETPACK", "DIG", "OPEN_CATALOG", "BUILD_COMPONENT", "INSPECT", "RESEARCH", "BLUEPRINT", "PLANNING_PAUSE", "SPRINT_HOVER", "MOVE_CAMERA", "PAINT_OR_ERASE"]:
+		_check(runtime_source.contains("demonstrate_onboarding(\"%s\")" % runtime_event), "runtime integrates demonstrated knowledge event %s" % runtime_event)
 
 	if failures.is_empty():
 		print("PASS: %d Phase 13.9 FTUE and UX checks" % checks)

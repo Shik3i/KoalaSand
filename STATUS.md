@@ -51,7 +51,7 @@ Phase 13.8 retains the reviewed Phase 13.7 Git baseline and prepares a new owner
 - Factory, Character and Creative first-use paths with persistence, reset, disable and legacy-profile migration.
 - Live Controls help, onboarding settings, mode explanations, Research legend/unlock feedback, Blueprint annotations and actionable empty states.
 - Automated clean-state FTUE coverage plus sequential silent capture and packaged-profile gates.
-- Final verification: `27/27` correctness scripts, `316` focused FTUE checks, `148` audited surfaces, `30` final captures and a `599.983 s` representative smoke.
+- Final verification: `27/27` correctness scripts, `328` focused FTUE checks, `148` audited surfaces, `30` final captures and a `599.983 s` representative smoke.
 
 ## Verification commands
 
