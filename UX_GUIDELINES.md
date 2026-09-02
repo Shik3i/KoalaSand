@@ -24,7 +24,9 @@ This file is the canonical player-UX contract.
 - Inspector/Info Mode: one context at a time; nearby-state hints; no persistent diagnostic wall.
 - Map: Character shows live, discovered/stale, and unknown; Factory/Creative show macro overview. It is never a remote live camera.
 - Statistics and overlays: optional, explicit, closeable; forbidden Character information stays unavailable.
-- New Game: player-facing Factory/Character/Creative cards, seed Randomize/Copy/Paste, safe WorldGen V2 preview, no developer enum labels.
+- New Game: player-facing Factory/Character/Creative cards, seed Randomize/Copy/Paste and a safe
+  WorldGen V5 landscape preview naming the spawn biome, terrain character, surface water and
+  bedrock province. Caves, ore and groundwater are never revealed. No developer enum labels.
 - Onboarding: contextual per preset, one-shot hints, skip/reset, serialized state.
 
 ## Input and focus
@@ -61,6 +63,16 @@ Launch opens Main Menu with Continue, saved-world selection/Load, Delete confirm
 - Knowledge completes only from the relevant demonstrated action and persists in the save. Guidance can be disabled or reset independently of progression.
 - First failures teach the physical cause in normal language. Later inspection remains available without toast spam.
 - Transient messages use the shared three-entry, duplicate-collapsing toast stack.
+
+## Release polish pass
+
+- No developer marker, prototype light or fixture-only decoration renders in a player-facing
+  view. Developer overlays are reachable only through the diagnostics toggles.
+- Every setting a player can change reads without colour: check states draw an explicit box
+  and mark, and continuous values carry a numeric readout beside the control.
+- Pause presents session actions (Resume, Save, Save and quit to menu, Save and exit) above
+  the settings scroll. Leaving the game must never require discovering a scrollbar.
+- Any panel that names a marker in its legend must draw that marker.
 
 ## Audio presentation policy
 

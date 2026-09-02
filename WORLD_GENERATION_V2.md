@@ -1,5 +1,7 @@
 # World Generation V2
 
+V2 is retained as a deterministic legacy generator for existing worlds. V3 remains the P0 recovery generator. New worlds use V4; see `P05_WORLD_QUALITY_PASS.md`.
+
 ## Identity and compatibility
 
 `WorldIdentity` schema `1` is:

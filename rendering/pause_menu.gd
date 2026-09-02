@@ -83,10 +83,10 @@ func _build_ui() -> void:
 	var panel := PanelContainer.new()
 	panel.theme_type_variation = "ModalPanel"
 	panel.set_anchors_preset(Control.PRESET_CENTER)
-	panel.offset_left = -330
-	panel.offset_top = -300
-	panel.offset_right = 330
-	panel.offset_bottom = 300
+	panel.offset_left = -368
+	panel.offset_top = -344
+	panel.offset_right = 368
+	panel.offset_bottom = 344
 	add_child(panel)
 	var scroll := ScrollContainer.new(); scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); panel.add_child(scroll)
 	var margin := MarginContainer.new()
@@ -97,16 +97,24 @@ func _build_ui() -> void:
 	margin.add_child(column)
 	var title := Label.new(); title.text = "Paused"; title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; title.theme_type_variation = "ScreenTitleLabel"; column.add_child(title)
 	var resume := Button.new(); resume.theme_type_variation = "PrimaryButton"; resume.text = "Resume"; resume.pressed.connect(func(): resume_requested.emit()); column.add_child(resume)
-	_name_input = LineEdit.new(); _name_input.placeholder_text = "World name"; column.add_child(_name_input)
-	var save := Button.new(); save.text = "Save world"; save.pressed.connect(func(): save_requested.emit(_name_input.text.strip_edges())); column.add_child(save)
+	# The field carried only a placeholder, so once a world had a name it read as an
+	# unlabelled text box.
+	_name_input = LineEdit.new(); _name_input.placeholder_text = "World name"; column.add_child(_labeled("World name", _name_input))
+	var session_row := HBoxContainer.new(); session_row.add_theme_constant_override("separation", 8); column.add_child(session_row)
+	var save := Button.new(); save.text = "Save world"; save.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	save.pressed.connect(func(): save_requested.emit(_name_input.text.strip_edges())); session_row.add_child(save)
+	var menu := Button.new(); menu.text = "Save and quit to menu"; menu.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	menu.pressed.connect(func(): return_to_menu_requested.emit()); session_row.add_child(menu)
+	var exit := Button.new(); exit.theme_type_variation = "DangerButton"; exit.text = "Save and exit"; exit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	exit.pressed.connect(func(): exit_requested.emit()); session_row.add_child(exit)
 	column.add_child(HSeparator.new())
 	var settings_title := Label.new(); settings_title.text = "Settings"; settings_title.theme_type_variation = "SectionTitleLabel"; column.add_child(settings_title)
 	_window_mode = OptionButton.new(); _window_mode.add_item("Windowed"); _window_mode.add_item("Borderless"); _window_mode.add_item("Fullscreen"); column.add_child(_labeled("Window / resolution mode", _window_mode))
 	_ui_scale = SpinBox.new(); _ui_scale.min_value = 0.75; _ui_scale.max_value = 2.0; _ui_scale.step = 0.05; _ui_scale.value = 1.0; column.add_child(_labeled("UI scale", _ui_scale))
 	_autosave = SpinBox.new(); _autosave.min_value = 1; _autosave.max_value = 30; _autosave.value = 5; _autosave.suffix = " min"; column.add_child(_labeled("Autosave", _autosave))
-	_master_audio = _volume_slider(); column.add_child(_labeled("Master volume", _master_audio))
+	_master_audio = _volume_slider(); column.add_child(_slider_row("Master volume", _master_audio))
 	for category in ["UI", "Character", "Environment", "Machines", "Music"]:
-		var slider := _volume_slider(); _audio_sliders[category] = slider; column.add_child(_labeled("%s volume" % category, slider))
+		var slider := _volume_slider(); _audio_sliders[category] = slider; column.add_child(_slider_row("%s volume" % category, slider))
 	_reduced_motion = CheckBox.new(); _reduced_motion.text = "Reduced motion"; column.add_child(_reduced_motion)
 	_screen_shake = CheckBox.new(); _screen_shake.text = "Screen shake"; _screen_shake.button_pressed = true; column.add_child(_screen_shake)
 	_hover_toggle = CheckBox.new(); _hover_toggle.text = "Hover uses toggle instead of hold"; _hover_toggle.button_pressed = true; column.add_child(_hover_toggle)
@@ -118,9 +126,7 @@ func _build_ui() -> void:
 	var planning_note := Label.new(); planning_note.text = "Planning Pause keeps camera, inspection and construction active while physics is frozen."; planning_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; planning_note.theme_type_variation = "CaptionLabel"; column.add_child(planning_note)
 	var support := Button.new(); support.theme_type_variation = "QuietButton"; support.text = "Export local diagnostics"; support.tooltip_text = "Creates a local ZIP. Nothing is uploaded."; support.pressed.connect(func(): diagnostics_requested.emit()); column.add_child(support)
 	var version := Label.new(); version.text = BuildInfo.display(); version.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; version.theme_type_variation = "CaptionLabel"; column.add_child(version)
-	column.add_child(HSeparator.new())
-	var menu := Button.new(); menu.text = "Save and return to main menu"; menu.pressed.connect(func(): return_to_menu_requested.emit()); column.add_child(menu)
-	var exit := Button.new(); exit.theme_type_variation = "DangerButton"; exit.text = "Save and exit"; exit.pressed.connect(func(): exit_requested.emit()); column.add_child(exit)
+
 
 
 func _labeled(label_text: String, control: Control) -> Control:
@@ -133,3 +139,20 @@ func _labeled(label_text: String, control: Control) -> Control:
 func _volume_slider() -> HSlider:
 	var slider := HSlider.new(); slider.min_value = 0; slider.max_value = 1; slider.step = 0.05; slider.value = 1
 	return slider
+
+
+func _slider_row(label_text: String, slider: HSlider) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	var label := Label.new(); label.text = label_text; label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(label)
+	slider.custom_minimum_size.x = 150
+	row.add_child(slider)
+	var readout := Label.new()
+	readout.theme_type_variation = "CaptionLabel"
+	readout.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	readout.custom_minimum_size.x = 46
+	readout.text = "%d%%" % roundi(slider.value * 100.0)
+	slider.value_changed.connect(func(value: float) -> void: readout.text = "%d%%" % roundi(value * 100.0))
+	row.add_child(readout)
+	return row

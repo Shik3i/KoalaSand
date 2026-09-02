@@ -180,6 +180,28 @@ NativeSandWorld::ConstituentMass NativeSandWorld::composition_for(
     ConstituentMass result{};
     if (material_id == RAW_SAND || material_id == FINE_SAND || material_id == HEAVY_CONCENTRATE ||
         material_id == IRON_CONCENTRATE || material_id == NONMAGNETIC_CONCENTRATE) {
+        if (world_settings_.generation_version >= 5) {
+            // One decoder shared with the reported composition. The remainder is assigned to
+            // the last constituent so the six values sum to exactly one full cell.
+            double fractions[6];
+            v5_profile_fractions(static_cast<uint16_t>(std::clamp(profile_id, 1, 65535)), signature, fractions);
+            int64_t assigned = 0;
+            for (int32_t index = 0; index < CONSTITUENT_COUNT - 1; ++index) {
+                result[index] = static_cast<int64_t>(FULL_CELL_MICRO_MASS * fractions[index]);
+                assigned += result[index];
+            }
+            result[CONSTITUENT_COUNT - 1] = FULL_CELL_MICRO_MASS - assigned;
+            if (material_id == FINE_SAND) {
+                result[0] += result[2] / 2; result[2] -= result[2] / 2;
+            } else if (material_id == HEAVY_CONCENTRATE) {
+                result[2] += result[0] / 2; result[0] -= result[0] / 2;
+            } else if (material_id == IRON_CONCENTRATE) {
+                result[1] += result[0] * 3 / 4; result[0] -= result[0] * 3 / 4;
+            } else if (material_id == NONMAGNETIC_CONCENTRATE) {
+                result[0] += result[1] * 3 / 4; result[1] -= result[1] * 3 / 4;
+            }
+            return result;
+        }
         const uint32_t profile = static_cast<uint32_t>(std::clamp(profile_id, 1, 65534));
         const uint32_t sig = signature;
         int64_t iron = FULL_CELL_MICRO_MASS * (700 + static_cast<int64_t>((profile >> 3u) & 0x3ffu)) / 10000;
@@ -640,6 +662,11 @@ bool NativeSandWorld::deserialize_world_snapshot(Dictionary state) {
     if (state.has("automation") && !deserialize_automation_state(state["automation"])) return false;
     if (state.has("power") && !deserialize_power_state(state["power"])) return false;
     if (state.has("visibility_owner_1")) deserialize_visibility_state(state["visibility_owner_1"]);
+    // reset() stops the generation workers and only restarts the render pool, so a restored
+    // world had no thread able to drain the generation queue: the first chunk streamed after
+    // a load blocked flush_generation() forever. Pre-existing, found while testing V5 save
+    // round trips, fixed here because streaming after a load is core world generation.
+    configure_generation_workers(saved_workers);
     return true;
 }
 

@@ -6,7 +6,7 @@ signal unlock_requested(research_id: String)
 const NODE_SIZE := Vector2(232, 108)
 const TREE_ORIGIN := Vector2(46, 120)
 const TREE_SPACING := Vector2(250, 126)
-const MIN_ZOOM := 0.58
+const MIN_ZOOM := 0.34
 const MAX_ZOOM := 1.20
 
 var _world: Variant
@@ -16,7 +16,8 @@ var _selected_id := "processing.dry_separation"
 var _hovered_id := ""
 var _last_revision := -1
 var _pan := Vector2.ZERO
-var _zoom := 0.66
+# Replaced on open by _fit_to_content(); this is only the value before the first layout.
+var _zoom := 0.56
 var _dragging := false
 var last_update_ms := 0.0
 
@@ -157,6 +158,7 @@ func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
 		if _dragging:
 			_pan += event.relative
+			_clamp_pan()
 			queue_redraw()
 			accept_event()
 			return
@@ -177,6 +179,7 @@ func _gui_input(event: InputEvent) -> void:
 			var old_zoom := _zoom
 			_zoom = clampf(_zoom * (1.10 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 0.90), MIN_ZOOM, MAX_ZOOM)
 			_pan = event.position - (event.position - _pan) * (_zoom / old_zoom)
+			_clamp_pan()
 			queue_redraw()
 			accept_event()
 			return
@@ -195,7 +198,56 @@ func _focus_selected() -> void:
 	if not _base_rects.has(_selected_id):
 		return
 	var rect: Rect2 = _base_rects[_selected_id]
-	_pan = Vector2(size.x * 0.34, size.y * 0.38) - rect.get_center() * _zoom
+	_fit_to_content()
+	_pan = Vector2(size.x * 0.5, size.y * 0.5) - rect.get_center() * _zoom
+	_clamp_pan()
+
+
+# Shrink to whatever shows the whole tree, so a first open never presents a half-cut card.
+# The player can still wheel in; this only sets the default.
+func _fit_to_content() -> void:
+	var bounds := _content_bounds()
+	if bounds.size.x <= 0.0 or bounds.size.y <= 0.0:
+		return
+	var view := _viewport_rect()
+	var fit := minf(view.size.x / bounds.size.x, view.size.y / bounds.size.y)
+	_zoom = clampf(minf(fit, 0.66), MIN_ZOOM, MAX_ZOOM)
+
+
+# The default framing centred the selected node, which put the right-hand branches half
+# outside the panel. Fit the whole tree when it fits, and never let a drag lose it.
+func _content_bounds() -> Rect2:
+	var bounds := Rect2()
+	var first := true
+	for id: Variant in _base_rects:
+		var rect: Rect2 = _base_rects[id]
+		if first:
+			bounds = rect
+			first = false
+		else:
+			bounds = bounds.merge(rect)
+	return bounds
+
+
+func _viewport_rect() -> Rect2:
+	return Rect2(Vector2(30.0, 190.0), Vector2(maxf(size.x - 60.0, 1.0), maxf(size.y - 310.0, 1.0)))
+
+
+func _clamp_pan() -> void:
+	var bounds := _content_bounds()
+	if bounds.size.x <= 0.0 or bounds.size.y <= 0.0:
+		return
+	var view := _viewport_rect()
+	var scaled := bounds.size * _zoom
+	var origin := bounds.position * _zoom
+	if scaled.x <= view.size.x:
+		_pan.x = view.position.x + (view.size.x - scaled.x) * 0.5 - origin.x
+	else:
+		_pan.x = clampf(_pan.x, view.end.x - scaled.x - origin.x, view.position.x - origin.x)
+	if scaled.y <= view.size.y:
+		_pan.y = view.position.y + (view.size.y - scaled.y) * 0.5 - origin.y
+	else:
+		_pan.y = clampf(_pan.y, view.end.y - scaled.y - origin.y, view.position.y - origin.y)
 
 func _unlock_rect() -> Rect2:
 	return Rect2(size.x - 210, size.y - 72, 172, 44)

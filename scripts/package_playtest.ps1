@@ -35,9 +35,18 @@ if (-not (Test-Path -LiteralPath (Join-Path $runtimeTemplateRoot 'windows_releas
     }
 }
 
+function Get-RepositoryRelativePath {
+    param([string] $Root, [string] $FullName)
+    $normalizedRoot = $Root.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+    if (-not $FullName.StartsWith($normalizedRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $FullName.Replace('\', '/')
+    }
+    return $FullName.Substring($normalizedRoot.Length).Replace('\', '/')
+}
+
 $sourceExtensions = @('.gd', '.uid', '.tscn', '.tres', '.godot', '.gdextension', '.json', '.cfg', '.cpp', '.hpp', '.h', '.ps1', '.md', '.txt')
 $sourceFiles = Get-ChildItem -LiteralPath $repoRoot -Recurse -File | Where-Object {
-    $relative = [System.IO.Path]::GetRelativePath($repoRoot, $_.FullName).Replace('\', '/')
+    $relative = Get-RepositoryRelativePath -Root $repoRoot -FullName $_.FullName
     $_.Extension -in $sourceExtensions -and
     -not $relative.StartsWith('.godot/') -and
     -not $relative.StartsWith('.godot-runtime/') -and
@@ -50,10 +59,15 @@ $sourceFiles = Get-ChildItem -LiteralPath $repoRoot -Recurse -File | Where-Objec
     $relative -ne 'BUILD_MANIFEST.json'
 } | Sort-Object FullName
 $manifestLines = foreach ($file in $sourceFiles) {
-    $relative = [System.IO.Path]::GetRelativePath($repoRoot, $file.FullName).Replace('\', '/')
+    $relative = Get-RepositoryRelativePath -Root $repoRoot -FullName $file.FullName
     "$relative $((Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash)"
 }
-$manifestHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes(($manifestLines -join "`n")))).ToLowerInvariant()
+# SHA256::HashData and Convert::ToHexString are .NET 5+ only, so neither exists in Windows
+# PowerShell 5.1. The digest itself is unchanged.
+$manifestBytes = [Text.Encoding]::UTF8.GetBytes(($manifestLines -join "`n"))
+$sha256 = [Security.Cryptography.SHA256]::Create()
+try { $manifestDigest = $sha256.ComputeHash($manifestBytes) } finally { $sha256.Dispose() }
+$manifestHash = (($manifestDigest | ForEach-Object { $_.ToString('x2') }) -join '')
 $buildId = 'local-' + $manifestHash.Substring(0, 12)
 $manifest = [ordered]@{
     version = $version
@@ -63,7 +77,12 @@ $manifest = [ordered]@{
     source_file_count = $sourceFiles.Count
     method = 'SHA-256 of sorted relative-path plus per-file SHA-256 records; Git not required.'
 }
-$manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $repoRoot 'BUILD_MANIFEST.json') -Encoding utf8NoBOM
+# Set-Content -Encoding utf8NoBOM is PowerShell 7 only, and 5.1's UTF8 writes a BOM.
+# Writing through .NET keeps the manifest byte-identical on both.
+[System.IO.File]::WriteAllText(
+    (Join-Path $repoRoot 'BUILD_MANIFEST.json'),
+    (($manifest | ConvertTo-Json) + "`r`n"),
+    (New-Object System.Text.UTF8Encoding($false)))
 
 New-Item -ItemType Directory -Path $artifactRoot -Force | Out-Null
 if (Test-Path -LiteralPath $packageRoot) { Remove-Item -LiteralPath $packageRoot -Recurse -Force }

@@ -34,7 +34,7 @@ var _mode_badge: Label
 var _page_label: Label
 var _onboarding_hint: Label
 var _inspector: PanelContainer
-var _inspector_text: Label
+var _inspector_text: RichTextLabel
 var _inspector_advanced: Label
 var _inspector_advanced_button: Button
 var _inspector_codex_id := ""
@@ -43,6 +43,8 @@ var _goal_title: Label
 var _goal_criteria: Label
 var _goal_help_id := "concept:construction"
 var _action_row: HBoxContainer
+var _compact_tools_button: Button
+var _tools_menu: PopupMenu
 var _ui_state := GameUIState.new()
 var _onboarding := OnboardingState.new()
 var _preset_id := GameModeCapabilities.Preset.FACTORY
@@ -59,13 +61,15 @@ var _menu_visibility: Dictionary = {}
 var _new_tool_keys: Dictionary = {}
 var _top_bar: PanelContainer
 var _bottom_dock: PanelContainer
-var _action_group: VBoxContainer
-var _quickbar_group: VBoxContainer
-var _utility_group: VBoxContainer
+var _action_group: HBoxContainer
+var _quickbar_group: HBoxContainer
+var _utility_group: HBoxContainer
 var _catalog_scroll: ScrollContainer
 var _goal_details: HBoxContainer
+var _goal_popup: PanelContainer
 var _goal_button: Button
 var _goal_help_button: Button
+var _onboarding_dismiss: Button
 var _navigation_menu: PopupMenu
 var _ui_scale := 1.0
 var _category_buttons: Dictionary = {}
@@ -142,7 +146,7 @@ func toggle_catalog() -> void:
 func set_page(page: int) -> void:
 	_active_page = wrapi(page, 0, PAGE_COUNT)
 	if _page_label != null:
-		_page_label.text = "QUICKBAR  %d / %d" % [_active_page + 1, PAGE_COUNT]
+		_page_label.text = "%d/%d" % [_active_page + 1, PAGE_COUNT]
 	_refresh_slots()
 
 func change_page(delta: int) -> void:
@@ -293,7 +297,8 @@ func show_inspector(title: String, lines: Array[String]) -> void:
 	var was_hidden := not _inspector.visible
 	_inspector.visible = not title.is_empty()
 	if was_hidden and _inspector.visible: KoalaSandTheme.animate_in(_inspector)
-	_inspector_text.text = "" if title.is_empty() else "%s\n\n%s" % [title.to_upper(), "\n".join(lines)]
+	_inspector_text.text = "" if title.is_empty() else "[b][color=#%s]%s[/color][/b]\n\n%s" % [
+		KoalaSandTheme.COLOR_ACCENT_BRIGHT.to_html(false), title.to_upper(), "\n".join(lines)]
 	_sync_help_safe_regions()
 
 func show_physical_inspector(result: Dictionary) -> void:
@@ -301,19 +306,22 @@ func show_physical_inspector(result: Dictionary) -> void:
 	var was_hidden := not _inspector.visible
 	_inspector.visible = not title.is_empty()
 	if was_hidden and _inspector.visible: KoalaSandTheme.animate_in(_inspector)
-	var lines: Array[String] = []
 	var causes: Array = result.get("causes", [])
+	var accent := KoalaSandTheme.COLOR_ACCENT_BRIGHT.to_html(false)
+	var warning := KoalaSandTheme.COLOR_WARNING.to_html(false)
+	var secondary := KoalaSandTheme.COLOR_TEXT_SECONDARY.to_html(false)
+	var body := "[b][color=#%s]%s[/color][/b]\n\n" % [accent, title]
 	if not causes.is_empty():
-		lines.append("WHY IT IS NOT WORKING")
+		body += "[b][color=#%s]WHY IT IS NOT WORKING[/color][/b]\n" % warning
 		for cause: String in causes:
 			var help := HelpCatalog.failure(cause)
-			lines.append("• %s" % str(help.title))
-			lines.append("  %s" % str(help.description))
-		lines.append("")
-	lines.append("STATE")
-	lines.append_array(Array(result.get("summary", [])))
-	_inspector_text.text = "%s\n\n%s" % [title, "\n".join(lines)]
-	_inspector_text.add_theme_color_override("font_color", KoalaSandTheme.COLOR_WARNING if not causes.is_empty() else KoalaSandTheme.COLOR_TEXT)
+			body += "[color=#%s]•[/color] %s\n" % [warning, str(help.title)]
+			body += "[color=#%s]   %s[/color]\n" % [secondary, str(help.description)]
+		body += "\n"
+	body += "[b][color=#%s]STATE[/color][/b]\n" % accent
+	for line: String in Array(result.get("summary", [])):
+		body += "%s\n" % line
+	_inspector_text.text = body
 	_inspector_advanced.text = "\n".join(Array(result.get("advanced", [])))
 	_inspector_advanced.visible = false
 	_inspector_advanced_button.visible = not _inspector_advanced.text.is_empty()
@@ -328,7 +336,7 @@ func set_planning_paused(paused: bool) -> void:
 func set_current_goal(title: String, criteria: Array[String], help_id := "concept:construction") -> void:
 	_goal_title.text = title
 	if _goal_button != null:
-		_goal_button.text = "GOAL · %s  %s" % [title, "▾" if _goal_expanded else "▸"]
+		_goal_button.text = "Objective · %s  %s" % [title, "▾" if _goal_expanded else "▸"]
 	_goal_criteria.text = " · ".join(criteria.slice(0, 4))
 	_goal_help_id = help_id
 
@@ -411,10 +419,11 @@ func _build_top_bar() -> void:
 	_top_bar.z_index = UILayoutPolicy.LAYER_HUD
 	_top_bar.set_meta("layout_role", "top_safe_region")
 	add_child(_top_bar)
-	var column := VBoxContainer.new(); _top_bar.add_child(column)
-	var primary := HBoxContainer.new(); column.add_child(primary)
+	var primary := HBoxContainer.new(); primary.add_theme_constant_override("separation", 7); _top_bar.add_child(primary)
 	_mode_badge = Label.new(); _mode_badge.text = "FACTORY"; _mode_badge.theme_type_variation = "SectionTitleLabel"; primary.add_child(_mode_badge)
 	_status = Label.new(); _status.size_flags_horizontal = Control.SIZE_EXPAND_FILL; _status.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS; primary.add_child(_status)
+	_goal_details = HBoxContainer.new(); _goal_details.set_meta("layout_role", "current_goal"); primary.add_child(_goal_details)
+	_goal_button = Button.new(); _goal_button.theme_type_variation = "QuietButton"; _goal_button.text = "Objective · Physical processing  ▸"; _goal_button.pressed.connect(_toggle_goal_details); _goal_details.add_child(_goal_button)
 	_reserves = Label.new(); _reserves.theme_type_variation = "NumericLabel"; primary.add_child(_reserves)
 	HelpCatalog.attach(_reserves, {"title":"Research materials", "description":"Glass, Iron and Gold currently available for unlocking Research."})
 	var research := Button.new(); research.theme_type_variation = "PrimaryButton"; research.text = "Research"; research.tooltip_text = InputGlyphs.hint(&"open_research", "Open Research"); research.pressed.connect(func(): research_requested.emit()); primary.add_child(research)
@@ -431,12 +440,15 @@ func _build_top_bar() -> void:
 	_alert_text = Label.new(); _alert_text.visible = false; _alert_text.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS; _alert_text.add_theme_color_override("font_color", KoalaSandTheme.COLOR_DANGER); primary.add_child(_alert_text)
 	_planning_badge = Label.new(); _planning_badge.text = "Ⅱ  PLANNING PAUSE"; _planning_badge.visible = false; _planning_badge.theme_type_variation = "WarningLabel"; primary.add_child(_planning_badge)
 
-	_goal_details = HBoxContainer.new(); _goal_details.set_meta("layout_role", "current_goal"); column.add_child(_goal_details)
-	_goal_button = Button.new(); _goal_button.theme_type_variation = "QuietButton"; _goal_button.text = "GOAL · Discover physical processing  ▸"; _goal_button.pressed.connect(_toggle_goal_details); _goal_details.add_child(_goal_button)
-	_goal_title = Label.new(); _goal_title.text = "Discover physical processing"; _goal_title.visible = false; _goal_details.add_child(_goal_title)
-	_goal_criteria = Label.new(); _goal_criteria.text = "Build · Observe · Iterate"; _goal_criteria.visible = false; _goal_criteria.size_flags_horizontal = Control.SIZE_EXPAND_FILL; _goal_criteria.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS; _goal_criteria.add_theme_color_override("font_color", KoalaSandTheme.COLOR_TEXT_SECONDARY); _goal_details.add_child(_goal_criteria)
-	_onboarding_hint = Label.new(); _onboarding_hint.text = _onboarding.current_hint(); _onboarding_hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL; _onboarding_hint.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS; _onboarding_hint.add_theme_color_override("font_color", Color("a9c3bd")); _goal_details.add_child(_onboarding_hint)
-	_goal_help_button = Button.new(); _goal_help_button.theme_type_variation = "QuietButton"; _goal_help_button.text = "How?"; _goal_help_button.visible = false; _goal_help_button.pressed.connect(func(): codex_requested.emit(_goal_help_id)); _goal_details.add_child(_goal_help_button)
+	_goal_popup = PanelContainer.new(); _goal_popup.name = "ObjectivePopup"; _goal_popup.theme_type_variation = "ElevatedPanel"; _goal_popup.mouse_filter = Control.MOUSE_FILTER_STOP; _goal_popup.z_index = UILayoutPolicy.LAYER_PANEL; _goal_popup.visible = false; add_child(_goal_popup)
+	var goal_margin := MarginContainer.new(); goal_margin.add_theme_constant_override("margin_left", 12); goal_margin.add_theme_constant_override("margin_top", 9); goal_margin.add_theme_constant_override("margin_right", 12); goal_margin.add_theme_constant_override("margin_bottom", 9); _goal_popup.add_child(goal_margin)
+	var goal_column := VBoxContainer.new(); goal_column.add_theme_constant_override("separation", 5); goal_margin.add_child(goal_column)
+	_goal_title = Label.new(); _goal_title.text = "Discover physical processing"; _goal_title.theme_type_variation = "SectionTitleLabel"; goal_column.add_child(_goal_title)
+	_goal_criteria = Label.new(); _goal_criteria.text = "Build · Observe · Iterate"; _goal_criteria.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; _goal_criteria.add_theme_color_override("font_color", KoalaSandTheme.COLOR_TEXT_SECONDARY); goal_column.add_child(_goal_criteria)
+	var onboarding_row := HBoxContainer.new(); goal_column.add_child(onboarding_row)
+	_onboarding_hint = Label.new(); _onboarding_hint.text = _onboarding.current_hint(); _onboarding_hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL; _onboarding_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; _onboarding_hint.add_theme_color_override("font_color", Color("a9c3bd")); onboarding_row.add_child(_onboarding_hint)
+	_onboarding_dismiss = Button.new(); _onboarding_dismiss.theme_type_variation = "QuietButton"; _onboarding_dismiss.text = "Dismiss hints"; _onboarding_dismiss.pressed.connect(func(): set_onboarding_enabled(false)); onboarding_row.add_child(_onboarding_dismiss)
+	_goal_help_button = Button.new(); _goal_help_button.theme_type_variation = "QuietButton"; _goal_help_button.text = "Open objective help"; _goal_help_button.pressed.connect(func(): codex_requested.emit(_goal_help_id)); goal_column.add_child(_goal_help_button)
 	_help_targets.goal_help = _goal_help_button; _help_targets.status = _goal_button
 	HelpCatalog.attach(_goal_help_button, {"title":"Goal help", "description":"Opens a relevant physical principle. It explains the outcome without prescribing one exact factory design.", "codex_id":"concept:construction"})
 
@@ -452,51 +464,56 @@ func _build_top_bar() -> void:
 func _build_bottom_dock() -> void:
 	_bottom_dock = PanelContainer.new()
 	_bottom_dock.name = "BottomDock"
-	_bottom_dock.theme_type_variation = "HudPanel"
+	_bottom_dock.theme_type_variation = "DockCanvas"
 	_bottom_dock.mouse_filter = Control.MOUSE_FILTER_STOP
 	_bottom_dock.z_index = UILayoutPolicy.LAYER_HUD
 	_bottom_dock.set_meta("layout_role", "bottom_safe_region")
 	add_child(_bottom_dock)
-	var margin := MarginContainer.new(); margin.add_theme_constant_override("margin_left", 8); margin.add_theme_constant_override("margin_top", 6); margin.add_theme_constant_override("margin_right", 8); margin.add_theme_constant_override("margin_bottom", 6); _bottom_dock.add_child(margin)
-	var dock_row := HFlowContainer.new(); dock_row.alignment = FlowContainer.ALIGNMENT_CENTER; margin.add_child(dock_row)
-	_action_group = VBoxContainer.new(); _action_group.set_meta("layout_role", "world_actions"); dock_row.add_child(_action_group)
-	var action_caption := Label.new(); action_caption.text = "WORLD TOOLS"; action_caption.theme_type_variation = "CaptionLabel"; _action_group.add_child(action_caption)
-	_action_row = HBoxContainer.new(); _action_group.add_child(_action_row)
+	var margin := MarginContainer.new(); margin.add_theme_constant_override("margin_left", 8); margin.add_theme_constant_override("margin_top", 5); margin.add_theme_constant_override("margin_right", 8); margin.add_theme_constant_override("margin_bottom", 5); _bottom_dock.add_child(margin)
+	var dock_row := HBoxContainer.new(); dock_row.alignment = BoxContainer.ALIGNMENT_CENTER; dock_row.add_theme_constant_override("separation", 7); margin.add_child(dock_row)
+	var action_panel := PanelContainer.new(); action_panel.theme_type_variation = "HudPanel"; dock_row.add_child(action_panel)
+	_action_group = HBoxContainer.new(); _action_group.set_meta("layout_role", "world_actions"); action_panel.add_child(_action_group)
+	_compact_tools_button = Button.new(); _compact_tools_button.theme_type_variation = "QuietButton"; _compact_tools_button.text = "Tools  ▾"; _compact_tools_button.visible = false; _action_group.add_child(_compact_tools_button)
+	_action_row = HBoxContainer.new(); _action_row.add_theme_constant_override("separation", 3); _action_group.add_child(_action_row)
 	var actions: Array[Dictionary] = [
 		{"name":"Select", "kind":"select", "id":0, "icon":"select"}, {"name":"Pick", "kind":"pipette", "id":0, "icon":"pipette"},
 		{"name":"Dig", "kind":"terrain", "id":3, "icon":"dig"}, {"name":"Cut", "kind":"organic_clear", "id":0, "icon":"remove"},
 		{"name":"Ignite", "kind":"ignite", "id":0, "icon":"furnace"}, {"name":"Remove", "kind":"remove", "id":0, "icon":"remove"},
 		{"name":"Plan", "kind":"blueprint_select", "id":0, "icon":"blueprint"},
 	]
-	for action: Dictionary in actions:
-		var button := Button.new(); button.theme_type_variation = "QuietButton"; button.text = str(action.name); button.pressed.connect(func(): tool_selected.emit(action)); _action_row.add_child(button)
+	_tools_menu = PopupMenu.new(); add_child(_tools_menu)
+	var action_glyphs := ["⌖", "⌁", "⛏", "✂", "✦", "×", "◇"]
+	for action_index in range(actions.size()):
+		var action: Dictionary = actions[action_index]
+		var button := Button.new(); button.theme_type_variation = "QuietButton"; button.text = action_glyphs[action_index]; button.tooltip_text = str(action.name); button.custom_minimum_size.x = 38; button.pressed.connect(func(): tool_selected.emit(action)); _action_row.add_child(button)
+		_tools_menu.add_item(str(action.name), _tools_menu.item_count)
 		var help_id: String = str({"pipette":"pipette", "blueprint_select":"blueprint", "select":"info_mode"}.get(str(action.kind), ""))
 		HelpCatalog.attach(button, HelpCatalog.control(help_id) if not help_id.is_empty() else {"title":str(action.name), "description":"Use this world tool to interact with physical cells and Components."})
 		if str(action.kind) == "terrain": _help_targets.dig = button
 		if str(action.kind) == "select": _help_targets.info = button
+	_tools_menu.id_pressed.connect(func(id: int): if id >= 0 and id < actions.size(): tool_selected.emit(actions[id]))
+	_compact_tools_button.pressed.connect(func(): _tools_menu.position = Vector2i(_compact_tools_button.global_position + Vector2(0, -_tools_menu.size.y)); _tools_menu.popup())
+	HelpCatalog.attach(_compact_tools_button, {"title":"World tools", "description":"Select, inspect, dig, cut, ignite, remove, or plan without covering the world."})
 
-	var left_separator := VSeparator.new(); dock_row.add_child(left_separator)
-	_quickbar_group = VBoxContainer.new(); _quickbar_group.size_flags_horizontal = Control.SIZE_EXPAND_FILL; _quickbar_group.set_meta("layout_role", "quickbar"); dock_row.add_child(_quickbar_group)
-	var slot_row := HBoxContainer.new(); slot_row.alignment = BoxContainer.ALIGNMENT_CENTER; slot_row.add_theme_constant_override("separation", 5); _quickbar_group.add_child(slot_row)
+	var quickbar_panel := PanelContainer.new(); quickbar_panel.theme_type_variation = "HudPanel"; quickbar_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL; dock_row.add_child(quickbar_panel)
+	_quickbar_group = HBoxContainer.new(); _quickbar_group.size_flags_horizontal = Control.SIZE_EXPAND_FILL; _quickbar_group.set_meta("layout_role", "quickbar"); _quickbar_group.alignment = BoxContainer.ALIGNMENT_CENTER; _quickbar_group.add_theme_constant_override("separation", 4); quickbar_panel.add_child(_quickbar_group)
+	var previous_page := Button.new(); previous_page.theme_type_variation = "QuietButton"; previous_page.text = "◀"; previous_page.pressed.connect(change_page.bind(-1)); _quickbar_group.add_child(previous_page)
+	HelpCatalog.attach(previous_page, HelpCatalog.control("quickbar_previous"))
+	var slot_row := HBoxContainer.new(); slot_row.alignment = BoxContainer.ALIGNMENT_CENTER; slot_row.add_theme_constant_override("separation", 4); _quickbar_group.add_child(slot_row)
 	for index in SLOT_COUNT:
-		var slot := ToolSlot.new(); slot.custom_minimum_size = Vector2(54, 48); slot.index = index
+		var slot := ToolSlot.new(); slot.custom_minimum_size = Vector2(48, 46); slot.index = index
 		slot.pressed.connect(_activate_visible_slot.bind(index)); slot.slot_drop.connect(_on_slot_drop); slot.slot_clear.connect(_on_slot_clear)
 		slot_row.add_child(slot); _slot_nodes.append(slot)
 	_help_targets.quickbar = slot_row
-	var page_row := HBoxContainer.new(); page_row.alignment = BoxContainer.ALIGNMENT_CENTER; _quickbar_group.add_child(page_row)
-	var previous_page := Button.new(); previous_page.theme_type_variation = "QuietButton"; previous_page.text = "◀"; previous_page.pressed.connect(change_page.bind(-1)); page_row.add_child(previous_page)
-	HelpCatalog.attach(previous_page, HelpCatalog.control("quickbar_previous"))
-	_page_label = Label.new(); _page_label.text = "QUICKBAR  1 / %d" % PAGE_COUNT; _page_label.theme_type_variation = "CaptionLabel"; page_row.add_child(_page_label)
-	var next_page := Button.new(); next_page.theme_type_variation = "QuietButton"; next_page.text = "▶"; next_page.pressed.connect(change_page.bind(1)); page_row.add_child(next_page)
+	var next_page := Button.new(); next_page.theme_type_variation = "QuietButton"; next_page.text = "▶"; next_page.pressed.connect(change_page.bind(1)); _quickbar_group.add_child(next_page)
 	HelpCatalog.attach(next_page, HelpCatalog.control("quickbar_next"))
+	_page_label = Label.new(); _page_label.text = "1/%d" % PAGE_COUNT; _page_label.theme_type_variation = "CaptionLabel"; _quickbar_group.add_child(_page_label)
 
-	var right_separator := VSeparator.new(); dock_row.add_child(right_separator)
-	_utility_group = VBoxContainer.new(); _utility_group.set_meta("layout_role", "dock_utilities"); dock_row.add_child(_utility_group)
-	var utility_caption := Label.new(); utility_caption.text = "BUILD"; utility_caption.theme_type_variation = "CaptionLabel"; _utility_group.add_child(utility_caption)
-	var utility_row := HBoxContainer.new(); _utility_group.add_child(utility_row)
-	var catalog_button := Button.new(); catalog_button.theme_type_variation = "PrimaryButton"; catalog_button.text = "Catalog  [%s]" % InputGlyphs.action(&"build_catalog"); catalog_button.pressed.connect(toggle_catalog); utility_row.add_child(catalog_button)
+	var utility_panel := PanelContainer.new(); utility_panel.theme_type_variation = "HudPanel"; dock_row.add_child(utility_panel)
+	_utility_group = HBoxContainer.new(); _utility_group.set_meta("layout_role", "dock_utilities"); _utility_group.add_theme_constant_override("separation", 4); utility_panel.add_child(_utility_group)
+	var catalog_button := Button.new(); catalog_button.theme_type_variation = "PrimaryButton"; catalog_button.text = "Build [%s]" % InputGlyphs.action(&"build_catalog"); catalog_button.pressed.connect(toggle_catalog); _utility_group.add_child(catalog_button)
 	_help_targets.catalog = catalog_button; HelpCatalog.attach(catalog_button, HelpCatalog.control("catalog"))
-	var blueprint_button := Button.new(); blueprint_button.theme_type_variation = "QuietButton"; blueprint_button.text = "Blueprints"; blueprint_button.pressed.connect(func(): blueprints_requested.emit()); utility_row.add_child(blueprint_button)
+	var blueprint_button := Button.new(); blueprint_button.theme_type_variation = "QuietButton"; blueprint_button.text = "Plans"; blueprint_button.pressed.connect(func(): blueprints_requested.emit()); _utility_group.add_child(blueprint_button)
 	_help_targets.blueprints = blueprint_button; HelpCatalog.attach(blueprint_button, HelpCatalog.control("blueprint"))
 
 
@@ -524,7 +541,10 @@ func _build_side_panels() -> void:
 	_inspector = PanelContainer.new(); _inspector.name = "InspectorPanel"; _inspector.theme_type_variation = "ElevatedPanel"; _inspector.visible = false; _inspector.mouse_filter = Control.MOUSE_FILTER_STOP; _inspector.z_index = UILayoutPolicy.LAYER_PANEL; add_child(_inspector)
 	var inspector_margin := MarginContainer.new(); inspector_margin.add_theme_constant_override("margin_left", 16); inspector_margin.add_theme_constant_override("margin_top", 14); inspector_margin.add_theme_constant_override("margin_right", 16); inspector_margin.add_theme_constant_override("margin_bottom", 14); _inspector.add_child(inspector_margin)
 	var inspector_column := VBoxContainer.new(); inspector_margin.add_child(inspector_column)
-	_inspector_text = Label.new(); _inspector_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; inspector_column.add_child(_inspector_text)
+	_inspector_text = RichTextLabel.new(); _inspector_text.bbcode_enabled = true; _inspector_text.fit_content = true
+	_inspector_text.scroll_active = false; _inspector_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_inspector_text.add_theme_color_override("default_color", KoalaSandTheme.COLOR_TEXT)
+	inspector_column.add_child(_inspector_text)
 	_inspector_advanced_button = Button.new(); _inspector_advanced_button.text = "ADVANCED DETAILS"; _inspector_advanced_button.visible = false; _inspector_advanced_button.pressed.connect(func(): _inspector_advanced.visible = not _inspector_advanced.visible); inspector_column.add_child(_inspector_advanced_button)
 	_inspector_advanced = Label.new(); _inspector_advanced.visible = false; _inspector_advanced.add_theme_color_override("font_color", KoalaSandTheme.COLOR_TEXT_DISABLED); inspector_column.add_child(_inspector_advanced)
 	var inspector_codex := Button.new(); inspector_codex.text = "OPEN IN CODEX"; inspector_codex.pressed.connect(func(): if not _inspector_codex_id.is_empty(): codex_requested.emit(_inspector_codex_id)); inspector_column.add_child(inspector_codex)
@@ -536,18 +556,29 @@ func _relayout() -> void:
 	var viewport_size := size
 	if viewport_size.x < 100.0 or viewport_size.y < 100.0:
 		viewport_size = get_viewport_rect().size
-	var margin := 14.0
-	var top_height := clampf(maxf(84.0 * _ui_scale, _top_bar.get_combined_minimum_size().y), 84.0, viewport_size.y * 0.22)
+	var margin := 8.0
+	var compact_tools := viewport_size.x < 1450.0 * _ui_scale
+	_action_row.visible = not compact_tools
+	_compact_tools_button.visible = compact_tools
+	_status.visible = viewport_size.x >= 1450.0 * _ui_scale
+	_goal_button.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
+	_goal_button.text = ("Objective · %s  %s" % [_goal_title.text, "▾" if _goal_expanded else "▸"]) if viewport_size.x >= 1560.0 * _ui_scale else "Objective  %s" % ("▾" if _goal_expanded else "▸")
+	_goal_button.custom_minimum_size.x = (230.0 if viewport_size.x >= 1560.0 * _ui_scale else 104.0) * minf(_ui_scale, 1.25)
+	var top_height := clampf(maxf(64.0 * _ui_scale, _top_bar.get_combined_minimum_size().y), 58.0, viewport_size.y * 0.14)
 	_top_bar.position = Vector2(margin, margin)
 	_top_bar.size = Vector2(viewport_size.x - margin * 2.0, top_height)
-	var dock_width := minf(viewport_size.x - margin * 2.0, maxf(viewport_size.x * 0.82, 1160.0 * _ui_scale))
-	var responsive_dock_height := 214.0 if _ui_scale >= 1.3 and viewport_size.x <= 1700.0 else 92.0 * _ui_scale
-	var dock_height := clampf(maxf(responsive_dock_height, _bottom_dock.get_combined_minimum_size().y), 92.0, viewport_size.y * 0.28)
+	var dock_width := minf(viewport_size.x - margin * 2.0, maxf(viewport_size.x * 0.82, 1080.0 * minf(_ui_scale, 1.25)))
+	var dock_height := clampf(maxf(96.0 * minf(_ui_scale, 1.25), _bottom_dock.get_combined_minimum_size().y), 90.0, viewport_size.y * 0.18)
 	_bottom_dock.position = Vector2((viewport_size.x - dock_width) * 0.5, viewport_size.y - dock_height - margin)
 	_bottom_dock.size = Vector2(dock_width, dock_height)
 	for slot: ToolSlot in _slot_nodes:
-		slot.custom_minimum_size = Vector2(54.0 * _ui_scale, 48.0 * _ui_scale)
+		var slot_scale := clampf(_ui_scale, 0.9, 1.15)
+		slot.custom_minimum_size = Vector2(48.0 * slot_scale, 46.0 * slot_scale)
 	var top_end := _top_bar.position.y + _top_bar.size.y
+	if _goal_popup != null:
+		var popup_width := minf(600.0 * minf(_ui_scale, 1.25), viewport_size.x - margin * 2.0)
+		_goal_popup.position = Vector2(margin, top_end + 8.0)
+		_goal_popup.size = Vector2(popup_width, minf(150.0 * _ui_scale, viewport_size.y * 0.22))
 	var available_height := maxf(360.0, _bottom_dock.position.y - top_end - 34.0)
 	var catalog_width := minf(viewport_size.x - margin * 2.0, maxf(viewport_size.x * 0.58, 720.0 * _ui_scale))
 	_catalog.position = Vector2(margin, top_end + 12.0)
@@ -619,9 +650,9 @@ func apply_layout_fixture(multiplier := 1.6) -> void:
 
 func _toggle_goal_details() -> void:
 	_goal_expanded = not _goal_expanded
-	_goal_criteria.visible = _goal_expanded
-	_goal_help_button.visible = _goal_expanded
-	_goal_button.text = "GOAL · %s  %s" % [_goal_title.text, "▾" if _goal_expanded else "▸"]
+	_goal_popup.visible = _goal_expanded
+	_goal_button.text = "Objective · %s  %s" % [_goal_title.text, "▾" if _goal_expanded else "▸"]
+	_sync_help_safe_regions()
 	call_deferred("_relayout")
 
 
@@ -655,6 +686,7 @@ func _sync_help_safe_regions() -> void:
 	if _tooltip_layer == null or _top_bar == null or _bottom_dock == null:
 		return
 	var reserved: Array[Rect2] = [_top_bar.get_global_rect(), _bottom_dock.get_global_rect()]
+	if _goal_popup != null and _goal_popup.visible: reserved.append(_goal_popup.get_global_rect())
 	if _inspector != null and _inspector.visible: reserved.append(_inspector.get_global_rect())
 	var modals: Array[Rect2] = []
 	for panel: PanelContainer in [_catalog, _statistics_panel, _controls_panel]:
@@ -919,6 +951,8 @@ func _refresh_onboarding() -> void:
 		return
 	_onboarding_hint.text = _onboarding.current_hint()
 	_onboarding_hint.visible = not _onboarding_hint.text.is_empty()
+	if _onboarding_dismiss != null:
+		_onboarding_dismiss.visible = _onboarding_hint.visible
 	if _highlight_layer == null:
 		return
 	if _ui_state.world_input_blocked():
@@ -926,7 +960,8 @@ func _refresh_onboarding() -> void:
 		return
 	var target := _help_targets.get(_onboarding.current_target()) as Control
 	if _onboarding_hint.visible and is_instance_valid(target):
-		_highlight_layer.show_step(target, "NEXT")
+		var step_label := str(_onboarding.current_step().get("id", "Try this")).replace("_", " ").capitalize()
+		_highlight_layer.show_step(target, step_label)
 	else:
 		_highlight_layer.clear()
 

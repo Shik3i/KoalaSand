@@ -91,9 +91,18 @@ func _navigate(id: String, record_history: bool) -> void:
 		_history_index = _history.size() - 1
 	_kind.text = "CODEX  /  %s" % str(entry.kind).to_upper()
 	_title.text = str(entry.title)
-	var text := "[font_size=16][color=#b9cbc7]%s[/color][/font_size]\n\n" % str(entry.get("summary", ""))
-	for section: String in Dictionary(entry.get("sections", {})):
-		text += "[color=#e8d58d][b]%s[/b][/color]\n%s\n\n" % [section, str(entry.sections[section])]
+	var summary := str(entry.get("summary", ""))
+	var sections := Dictionary(entry.get("sections", {}))
+	var text := ""
+	# Many entries repeat the summary verbatim as their first section; printing both reads
+	# as a copy-paste slip rather than as a lead paragraph.
+	var duplicated := false
+	for value: Variant in sections.values():
+		if str(value) == summary: duplicated = true
+	if not summary.is_empty() and not duplicated:
+		text = "[font_size=16][color=#b9cbc7]%s[/color][/font_size]\n\n" % summary
+	for section: String in sections:
+		text += "[color=#e8d58d][b]%s[/b][/color]\n%s\n\n" % [section, str(sections[section])]
 	_body.text = text
 	for child in _related.get_children(): child.queue_free()
 	for related_id: String in Array(entry.get("related", [])):

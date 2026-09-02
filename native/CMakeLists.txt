@@ -41,6 +41,9 @@ add_library(koalasand_native SHARED
     src/native_pipe_logistics.cpp
     src/native_power.cpp
     src/native_worldgen_v2.cpp
+    src/native_worldgen_v5.cpp
+    src/native_worldgen_v5_caves.cpp
+    src/native_worldgen_v5_report.cpp
     src/native_fluid_prototype.cpp
     src/native_thermal_candidate.cpp
     src/native_thermodynamics.cpp

@@ -286,6 +286,25 @@ void NativeSandWorld::_bind_methods() {
     ClassDB::bind_method(D_METHOD("validate_world_seeds", "first_seed", "count"), &NativeSandWorld::validate_world_seeds);
     ClassDB::bind_method(D_METHOD("get_worldgen_pass_hashes", "chunk_area"), &NativeSandWorld::get_worldgen_pass_hashes);
     ClassDB::bind_method(D_METHOD("get_worldgen_debug_sample", "cell_area", "stride"), &NativeSandWorld::get_worldgen_debug_sample, DEFVAL(8));
+    ClassDB::bind_method(D_METHOD("get_generation_stability_report", "chunk_area"), &NativeSandWorld::get_generation_stability_report);
+    ClassDB::bind_method(D_METHOD("get_worldgen_quality_report", "chunk_area"), &NativeSandWorld::get_worldgen_quality_report);
+    ClassDB::bind_method(D_METHOD("get_worldgen_v5_architecture"), &NativeSandWorld::get_worldgen_v5_architecture);
+    ClassDB::bind_method(D_METHOD("get_worldgen_v5_profiles"), &NativeSandWorld::get_worldgen_v5_profiles);
+    ClassDB::bind_method(D_METHOD("get_worldgen_v5_columns", "first_x", "count", "stride"),
+                         &NativeSandWorld::get_worldgen_v5_columns, DEFVAL(1));
+    ClassDB::bind_method(D_METHOD("get_worldgen_v5_cell", "world_cell"), &NativeSandWorld::get_worldgen_v5_cell);
+    ClassDB::bind_method(D_METHOD("get_worldgen_v5_statistics", "first_seed", "count"),
+                         &NativeSandWorld::get_worldgen_v5_statistics);
+    ClassDB::bind_method(D_METHOD("get_worldgen_v5_start_report"), &NativeSandWorld::get_worldgen_v5_start_report);
+    ClassDB::bind_method(D_METHOD("get_world_preview_summary"), &NativeSandWorld::get_world_preview_summary);
+    ClassDB::bind_method(D_METHOD("get_worldgen_debug_chunk_view", "chunk_coordinate", "world_cell"), &NativeSandWorld::get_worldgen_debug_chunk_view);
+    ClassDB::bind_method(D_METHOD("get_cave_topology_report", "chunk_area"), &NativeSandWorld::get_cave_topology_report);
+    ClassDB::bind_method(D_METHOD("get_worldgen_debug_field", "cell_area", "field_id", "stride"),
+                         &NativeSandWorld::get_worldgen_debug_field, DEFVAL(1));
+    ClassDB::bind_method(D_METHOD("get_structure_candidates", "cell_area", "structure_type"),
+                         &NativeSandWorld::get_structure_candidates);
+    ClassDB::bind_method(D_METHOD("get_natural_scene_candidates", "cell_area"),
+                         &NativeSandWorld::get_natural_scene_candidates);
     ClassDB::bind_method(D_METHOD("get_character_spawn"), &NativeSandWorld::get_character_spawn);
     ClassDB::bind_method(D_METHOD("query_character_collision", "body"), &NativeSandWorld::query_character_collision);
     ClassDB::bind_method(D_METHOD("character_dig_cell", "world_cell"), &NativeSandWorld::character_dig_cell);
@@ -1907,7 +1926,7 @@ void NativeSandWorld::configure_world(Dictionary settings, int32_t generation_wo
     world_settings_.coal_frequency = std::clamp(world_settings_.coal_frequency, 0.50, 0.99);
     world_settings_.water_frequency = std::clamp(world_settings_.water_frequency, 0.50, 0.99);
     world_settings_.geology_scale = std::clamp(world_settings_.geology_scale, 64, 4096);
-    world_settings_.generation_version = std::clamp(world_settings_.generation_version, 1, 2);
+    world_settings_.generation_version = std::clamp(world_settings_.generation_version, 1, 5);
 
     tick_index_ = 0;
     last_chunks_published_ = 0;
@@ -2110,6 +2129,7 @@ void NativeSandWorld::publish_generated_chunk(std::unique_ptr<GeneratedChunk> ge
     chunk->provenance = generated->provenance;
     chunk->mineral_signature = generated->mineral_signature;
     chunk->organic_moisture = std::move(generated->organic_moisture);
+    chunk->material_amount = std::move(generated->material_amount);
     chunk->generated = true;
     chunk->pristine = true;
     chunk->revision = 1;
@@ -2351,6 +2371,22 @@ Dictionary NativeSandWorld::get_geology_profile(int32_t profile_id) const {
     Dictionary result;
     if (profile_id < 1 || profile_id > 65535) return result;
     const uint16_t packed = static_cast<uint16_t>(profile_id);
+    if (world_settings_.generation_version >= 5) {
+        // Same decoder the conservation ledger uses, so the reported composition is the
+        // composition. Signature-driven clay is reported at its mid value here because a
+        // profile alone does not identify a cell.
+        double fractions[6];
+        v5_profile_fractions(packed, 0x1f, fractions);
+        result["profile_id"] = profile_id;
+        result["silica_fraction"] = fractions[0];
+        result["iron_fraction"] = fractions[1];
+        result["heavy_minerals_fraction"] = fractions[2];
+        result["clay_fraction"] = fractions[4];
+        result["other_fraction"] = fractions[5];
+        result["gold_ppm"] = fractions[3] * 1000000.0;
+        result["rock_family"] = (packed & 31u) >> 1u;
+        return result;
+    }
     const int32_t q_silica = packed & 31u;
     const int32_t q_iron = (packed >> 5u) & 31u;
     const int32_t q_heavy = (packed >> 10u) & 7u;
@@ -2379,6 +2415,9 @@ Dictionary NativeSandWorld::get_geology_profile_at(Vector2i world_cell) const {
 }
 
 std::unique_ptr<NativeSandWorld::GeneratedChunk> NativeSandWorld::generate_chunk_data(Vector2i coordinate) const {
+    if (world_settings_.generation_version >= 5) return generate_chunk_data_v5(coordinate);
+    if (world_settings_.generation_version >= 4) return generate_chunk_data_v4(coordinate);
+    if (world_settings_.generation_version >= 3) return generate_chunk_data_v3(coordinate);
     if (world_settings_.generation_version >= 2) return generate_chunk_data_v2(coordinate);
     const auto started = std::chrono::steady_clock::now();
     auto generated = std::make_unique<GeneratedChunk>();
@@ -3865,17 +3904,79 @@ void NativeSandWorld::sample_rgba(const Chunk &chunk, int32_t local_x, int32_t l
                           material_id == BURNT_FOOD_ID ? BURNT_FOOD_PALETTE : BEDROCK_PALETTE;
     const int32_t noise_scale = material_id == SAND_ID ? 5 : material_id == WATER_ID ? 12 : material_id == COAL_ID ? 6 : 9;
     const float depth_tint = material_id == SAND_ID ? 0.14f : material_id == COAL_ID ? 0.10f : 0.18f;
-    const RgbaFloat surface = material_id == STONE_ID ? RgbaFloat{0.42f, 0.50f, 0.56f, 1.0f} :
+    RgbaFloat surface = material_id == STONE_ID ? RgbaFloat{0.42f, 0.50f, 0.56f, 1.0f} :
                               material_id == SAND_ID ? RgbaFloat{0.94f, 0.79f, 0.45f, 1.0f} :
                               material_id == WATER_ID ? RgbaFloat{0.38f, 0.82f, 0.86f, 0.95f} :
                               material_id == COAL_ID ? RgbaFloat{0.18f, 0.19f, 0.20f, 1.0f} :
                                                        palette[2];
-    const RgbaFloat shadow = material_id == STONE_ID ? RgbaFloat{0.075f, 0.10f, 0.14f, 1.0f} :
+    RgbaFloat shadow = material_id == STONE_ID ? RgbaFloat{0.075f, 0.10f, 0.14f, 1.0f} :
                              material_id == SAND_ID ? RgbaFloat{0.36f, 0.23f, 0.10f, 1.0f} :
                              material_id == WATER_ID ? RgbaFloat{0.025f, 0.18f, 0.25f, 0.92f} :
                              material_id == COAL_ID ? RgbaFloat{0.018f, 0.022f, 0.028f, 1.0f} :
                                                       RgbaFloat{palette[0].r * 0.36f, palette[0].g * 0.36f, palette[0].b * 0.36f, 1.0f};
     RgbaFloat color = palette[hash_2d(seed_, world_cell, material_id * 131) % palette.size()];
+    if (world_settings_.generation_version >= 5 && (material_id == STONE_ID || material_id == SAND_ID)) {
+        // V5 colours rock straight from its stored composition, so the section a player reads
+        // is the material data. No extra per-cell state and no field evaluation while rendering.
+        float rock[3];
+        v5_profile_colour(chunk.provenance[local_y * CHUNK_SIZE + local_x], rock);
+        if (material_id == SAND_ID) {
+            surface = {0.94f, 0.82f, 0.52f, 1.0f};
+            shadow = {rock[0] * 0.45f, rock[1] * 0.42f, rock[2] * 0.38f, 1.0f};
+            color = {std::clamp(rock[0] * 0.35f + 0.58f, 0.0f, 1.0f),
+                     std::clamp(rock[1] * 0.35f + 0.47f, 0.0f, 1.0f),
+                     std::clamp(rock[2] * 0.35f + 0.24f, 0.0f, 1.0f), 1.0f};
+        } else {
+            color = {rock[0], rock[1], rock[2], 1.0f};
+            surface = {std::clamp(rock[0] * 1.28f + 0.05f, 0.0f, 1.0f),
+                       std::clamp(rock[1] * 1.28f + 0.05f, 0.0f, 1.0f),
+                       std::clamp(rock[2] * 1.28f + 0.05f, 0.0f, 1.0f), 1.0f};
+            shadow = {rock[0] * 0.30f, rock[1] * 0.30f, rock[2] * 0.32f, 1.0f};
+        }
+        // A bed covering a whole screen reads as flat paint without mid-frequency structure,
+        // and per-cell noise alone reads as static rather than as rock. Laminae give the tone
+        // a few-cell horizontal grain, warped along x so the banding is not a ruled line, and
+        // a coarse mottle breaks up the remaining large areas.
+        const int32_t warp = static_cast<int32_t>((hash_2d(seed_, {world_cell.x >> 4, 0}, 977) & 3u));
+        const uint32_t lamina = hash_2d(seed_, {0, (world_cell.y + warp) >> 2}, 613) & 255u;
+        const uint32_t mottle = hash_2d(seed_, {world_cell.x >> 3, world_cell.y >> 3}, 1097) & 255u;
+        const uint32_t grain = hash_2d(seed_, world_cell, material_id * 131) & 63u;
+        const float tone = (static_cast<float>(lamina) / 255.0f - 0.5f) * 0.085f +
+                           (static_cast<float>(mottle) / 255.0f - 0.5f) * 0.070f +
+                           (static_cast<float>(grain) / 63.0f - 0.5f) * 0.038f;
+        color.r = std::clamp(color.r + tone, 0.0f, 1.0f);
+        color.g = std::clamp(color.g + tone * 0.96f, 0.0f, 1.0f);
+        color.b = std::clamp(color.b + tone * 0.90f, 0.0f, 1.0f);
+    } else if (world_settings_.generation_version == 4 && material_id == STONE_ID) {
+        const uint16_t tag = chunk.provenance[local_y * CHUNK_SIZE + local_x];
+        if ((tag & 0x8000u) != 0u) {
+            const int32_t layer = (tag >> 8u) & 7u;
+            constexpr std::array<RgbaFloat, 5> PROVINCE{{
+                RgbaFloat{0.22f,0.25f,0.27f,1}, RgbaFloat{0.27f,0.23f,0.29f,1}, RgbaFloat{0.20f,0.28f,0.25f,1},
+                RgbaFloat{0.30f,0.26f,0.20f,1}, RgbaFloat{0.20f,0.23f,0.32f,1},
+            }};
+            if (layer == 1) { color = {0.30f,0.25f,0.14f,1}; surface = {0.42f,0.37f,0.19f,1}; shadow = {0.12f,0.10f,0.06f,1}; }
+            else if (layer == 2) { color = {0.43f,0.31f,0.19f,1}; surface = {0.58f,0.43f,0.25f,1}; shadow = {0.18f,0.12f,0.08f,1}; }
+            else if (layer == 3) { color = {0.34f,0.33f,0.29f,1}; surface = {0.48f,0.46f,0.39f,1}; shadow = {0.13f,0.13f,0.12f,1}; }
+            else {
+                const int32_t province_anchor = floor_div(world_cell.x, 512);
+                const int32_t province_local_x = world_cell.x - province_anchor * 512;
+                const int32_t left_province = geology_province_at_v4({province_anchor * 512 + 8, world_cell.y});
+                const int32_t right_province = geology_province_at_v4({(province_anchor + 1) * 512 + 8, world_cell.y});
+                float province_mix = static_cast<float>(province_local_x) / 512.0f;
+                province_mix = province_mix * province_mix * (3.0f - 2.0f * province_mix);
+                color = lerp_color(PROVINCE[left_province % PROVINCE.size()], PROVINCE[right_province % PROVINCE.size()], province_mix);
+                const int32_t depth = world_cell.y - surface_height_at_v4(world_cell.x);
+                const int32_t stripe = floor_div(world_cell.y + static_cast<int32_t>(std::lround(std::sin(world_cell.x * 0.018) * 11.0)), 28) & 3;
+                const float lift = 0.018f * stripe - std::min(0.055f, depth * 0.000025f);
+                color.r = std::clamp(color.r + lift, 0.0f, 1.0f);
+                color.g = std::clamp(color.g + lift * 0.8f, 0.0f, 1.0f);
+                color.b = std::clamp(color.b + lift * 1.1f, 0.0f, 1.0f);
+                surface = lerp_color(color, RgbaFloat{0.58f,0.61f,0.59f,1}, 0.42f);
+                shadow = lerp_color(color, RgbaFloat{0.03f,0.045f,0.06f,1}, 0.68f);
+            }
+        }
+    }
     const Vector2i coarse{floor_div(world_cell.x, noise_scale), floor_div(world_cell.y, noise_scale)};
     const float coarse_value = static_cast<float>(hash_2d(seed_, coarse, material_id * 977)) / static_cast<float>(MASK_31);
     color = lerp_color(color, shadow, depth_tint * (0.25f + 0.50f * coarse_value));

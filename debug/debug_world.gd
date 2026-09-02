@@ -1551,7 +1551,7 @@ func _configure_procedural_world() -> void:
 		"coal_frequency": 0.73,
 		"water_frequency": 0.72,
 		"geology_scale": 512,
-		"generation_version": 2 if not _phase11_view.is_empty() or not _phase12_view.is_empty() or not _phase13_view.is_empty() or _validate_seeds > 0 else 1,
+		"generation_version": BuildInfo.GENERATION_VERSION,
 	}, GENERATION_WORKERS)
 
 
@@ -2035,8 +2035,10 @@ func _build_phase11_showcase() -> void:
 		world.place_structure(29, center + Vector2i(22, 5), 0)
 		world.set_game_mode(previous_mode)
 	world.finalize_initialization()
-	camera.position = Vector2(center) * renderer.cell_pixel_size
-	zoom_index = 3 if _phase11_view not in ["character-overview", "overview", "worldgen-debug"] else 1
+	var factory_views := ["factory-mode", "factory-normal", "full-game", "build-catalog", "research", "blueprint-preview", "info-mode", "statistics", "overlay", "diagnostics"]
+	var vertical_focus := 20 if _phase11_view in factory_views else 8 if _phase11_view.begins_with("character") else 0
+	camera.position = Vector2(center + Vector2i(0, vertical_focus)) * renderer.cell_pixel_size
+	zoom_index = 4 if _phase11_view in factory_views else 3 if _phase11_view not in ["character-overview", "overview", "worldgen-debug"] else 1
 
 
 func _build_phase10_showcase() -> void:
@@ -2113,6 +2115,7 @@ func _configure_phase11_view() -> void:
 		overlay.set_chunk_debug(true)
 	if _phase11_view == "worldgen-debug":
 		overlay.set_geology_heatmap(true)
+		overlay.set_worldgen_debug_layers(["macro_regions", "geology", "cave_archetypes", "aquifers", "start_constraints"])
 	if _phase11_view in ["character-overview", "discovered-map"]:
 		structure_renderer.set_overview_mode(true)
 	if _phase11_view in ["hover", "character-hover"]:

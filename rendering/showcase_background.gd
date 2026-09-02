@@ -10,7 +10,7 @@ func _ready() -> void:
 
 func _draw() -> void:
 	var world_rect := Rect2(Vector2(-900, -520), Vector2(1800, 1200))
-	draw_rect(world_rect, Color(0.025, 0.045, 0.06, 1.0))
+	draw_rect(world_rect, Color(0.042, 0.060, 0.069, 1.0))
 
 	var sky_top := Color(0.08, 0.19, 0.24, 1.0)
 	var sky_bottom := Color(0.18, 0.26, 0.27, 1.0)
@@ -37,8 +37,12 @@ func _draw() -> void:
 			Vector2(750, 13), Vector2(900, 24), Vector2(900, 680),
 			Vector2(-900, 680),
 		]),
-		Color(0.035, 0.06, 0.075, 1.0)
+		Color(0.048, 0.071, 0.081, 1.0)
 	)
+	for depth_band in range(1, 15):
+		var y := float(depth_band * 46 + 24)
+		var fade := clampf(0.16 - depth_band * 0.006, 0.045, 0.16)
+		draw_line(Vector2(-900, y), Vector2(900, y + sin(depth_band * 1.7) * 9.0), Color(0.16, 0.21, 0.22, fade), 1.0)
 	for grid_y in range(1, 9):
 		for grid_x in range(-10, 11):
 			var cell := Vector2i(grid_x, grid_y)

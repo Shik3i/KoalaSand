@@ -66,6 +66,8 @@ uint32_t hash_component(uint32_t hash, uint32_t component) {
 Dictionary distribution(std::vector<double> values) {
     Dictionary result;
     if (values.empty()) return result;
+    double total = 0.0;
+    for (const double value : values) total += value;
     std::sort(values.begin(), values.end());
     const auto percentile = [&values](double p) {
         const size_t index = static_cast<size_t>(std::clamp(std::llround((values.size() - 1) * p), 0ll,
@@ -73,8 +75,10 @@ Dictionary distribution(std::vector<double> values) {
         return values[index];
     };
     result["min"] = values.front();
+    result["mean"] = total / static_cast<double>(values.size());
     result["p05"] = percentile(0.05);
     result["p50"] = percentile(0.50);
+    result["p90"] = percentile(0.90);
     result["p95"] = percentile(0.95);
     result["p99"] = percentile(0.99);
     result["max"] = values.back();
@@ -94,6 +98,19 @@ bool bit_set(std::array<uint8_t, NativeSandWorld::CELLS_PER_CHUNK / 8> &bits, in
 
 bool terrain_solid(int32_t material) {
     return material == STONE || material == COAL || material == BEDROCK || material == ICE;
+}
+
+double segment_distance_squared(Vector2i point, Vector2i start, Vector2i end) {
+    const double vx = static_cast<double>(end.x - start.x);
+    const double vy = static_cast<double>(end.y - start.y);
+    const double length_squared = vx * vx + vy * vy;
+    if (length_squared <= 0.0) return static_cast<double>(point.distance_squared_to(start));
+    const double wx = static_cast<double>(point.x - start.x);
+    const double wy = static_cast<double>(point.y - start.y);
+    const double t = std::clamp((wx * vx + wy * vy) / length_squared, 0.0, 1.0);
+    const double dx = static_cast<double>(point.x) - (static_cast<double>(start.x) + vx * t);
+    const double dy = static_cast<double>(point.y) - (static_cast<double>(start.y) + vy * t);
+    return dx * dx + dy * dy;
 }
 } // namespace
 
@@ -306,6 +323,586 @@ std::unique_ptr<NativeSandWorld::GeneratedChunk> NativeSandWorld::generate_chunk
     return generated;
 }
 
+int32_t NativeSandWorld::surface_height_at_v3(int32_t world_x) const {
+    constexpr int32_t surface_scale = 256;
+    const int32_t anchor = floor_div(world_x, surface_scale);
+    const int32_t local = world_x - anchor * surface_scale;
+    const auto elevation = [this](int32_t index) {
+        const double continental = unit_hash(seed_, floor_div(index, 4), 0, 0x9101) * 2.0 - 1.0;
+        const double regional = unit_hash(seed_, index, 0, 0x9103) * 2.0 - 1.0;
+        return world_settings_.surface_baseline + static_cast<int32_t>(std::lround(
+            world_settings_.surface_amplitude * (continental * 0.66 + regional * 0.34)));
+    };
+    const double amount = smooth(static_cast<double>(local) / surface_scale);
+    int32_t surface = static_cast<int32_t>(std::lround(elevation(anchor) + (elevation(anchor + 1) - elevation(anchor)) * amount));
+    const int32_t spawn_surface = elevation(0);
+    const int32_t distance = std::abs(world_x);
+    if (distance < 128) {
+        const double blend = smooth(static_cast<double>(distance) / 128.0);
+        surface = static_cast<int32_t>(std::lround(spawn_surface + (surface - spawn_surface) * blend));
+    }
+    return surface;
+}
+
+bool NativeSandWorld::surface_lake_at_v3(Vector2i cell, int32_t surface) const {
+    constexpr int32_t lake_scale = 768;
+    const int32_t group = floor_div(cell.x, lake_scale);
+    for (int32_t offset = -1; offset <= 1; ++offset) {
+        const int32_t candidate = group + offset;
+        if (unit_hash(seed_, candidate, 0, 0x9201) < 0.92) continue;
+        const int32_t radius = 42 + static_cast<int32_t>(field_hash(seed_, candidate, 0, 0x9203) % 38u);
+        const int32_t center = candidate * lake_scale + lake_scale / 2;
+        if (std::abs(cell.x - center) > radius) continue;
+        const int32_t left_rim = surface_height_at_v3(center - radius);
+        const int32_t right_rim = surface_height_at_v3(center + radius);
+        // Y grows downward: the lower physical spill rim has the larger cell Y.
+        const int32_t water_level = std::max(left_rim, right_rim);
+        if (surface_height_at_v3(center) < water_level + 4) continue;
+        return cell.y >= water_level && cell.y < surface;
+    }
+    return false;
+}
+
+bool NativeSandWorld::aquifer_at_v3(Vector2i cell, int32_t surface) const {
+    const int32_t early_surface = surface_height_at_v3(190);
+    const Vector2i early_center{190, early_surface + 166};
+    const Vector2i early_delta = cell - early_center;
+    if (early_delta.x * early_delta.x * 144 + early_delta.y * early_delta.y * 400 <= 24 * 24 * 144)
+        return cell.y >= early_center.y;
+
+    constexpr int32_t aquifer_x_scale = 384;
+    constexpr int32_t aquifer_y_scale = 256;
+    const int32_t depth = cell.y - surface;
+    const int32_t grid_x = floor_div(cell.x, aquifer_x_scale);
+    const int32_t grid_y = floor_div(depth, aquifer_y_scale);
+    for (int32_t oy = -1; oy <= 1; ++oy) for (int32_t ox = -1; ox <= 1; ++ox) {
+        const int32_t gx = grid_x + ox;
+        const int32_t gy = grid_y + oy;
+        if (gy < 1 || unit_hash(seed_, gx, gy, 0x9301) < 0.84) continue;
+        const int32_t center_x = gx * aquifer_x_scale + aquifer_x_scale / 2 + static_cast<int32_t>(field_hash(seed_, gx, gy, 0x9303) % 81u) - 40;
+        const int32_t center_y = surface_height_at_v3(center_x) + gy * aquifer_y_scale + aquifer_y_scale / 2;
+        const int32_t rx = 18 + static_cast<int32_t>(field_hash(seed_, gx, gy, 0x9305) % 11u);
+        const int32_t ry = 11 + static_cast<int32_t>(field_hash(seed_, gx, gy, 0x9307) % 8u);
+        const Vector2i delta = cell - Vector2i(center_x, center_y);
+        if (delta.x * delta.x * ry * ry + delta.y * delta.y * rx * rx <= rx * rx * ry * ry)
+            return cell.y >= center_y;
+    }
+    return false;
+}
+
+int32_t NativeSandWorld::cave_type_at_v3(Vector2i cell, int32_t surface) const {
+    const int32_t depth = cell.y - surface;
+    const int32_t roof = std::max(34, world_settings_.sediment_depth + 18);
+    if (depth < roof || (std::abs(cell.x) < 48 && depth < 176)) return CAVE_NONE;
+
+    if (cell.x >= 64 && cell.x <= 128) {
+        const int32_t route_y = surface + 42 + (cell.x - 64) * 3 / 4;
+        if (std::abs(cell.y - route_y) <= 4) return CAVE_TUNNEL;
+    }
+    const Vector2i early_delta{cell.x - 132, cell.y - (surface_height_at_v3(132) + 104)};
+    if (early_delta.x * early_delta.x * 196 + early_delta.y * early_delta.y * 576 <= 24 * 24 * 196)
+        return CAVE_CAVERN;
+
+    const int32_t early_aquifer_surface = surface_height_at_v3(190);
+    const Vector2i early_aquifer_delta = cell - Vector2i(190, early_aquifer_surface + 166);
+    if (early_aquifer_delta.x * early_aquifer_delta.x * 144 + early_aquifer_delta.y * early_aquifer_delta.y * 400 <= 24 * 24 * 144)
+        return CAVE_CAVERN;
+    if (early_aquifer_delta.x * early_aquifer_delta.x * 256 + early_aquifer_delta.y * early_aquifer_delta.y * 784 <= 28 * 28 * 256)
+        return CAVE_NONE;
+
+    constexpr int32_t aquifer_x_scale = 384;
+    constexpr int32_t aquifer_y_scale = 256;
+    const int32_t aquifer_grid_x = floor_div(cell.x, aquifer_x_scale);
+    const int32_t aquifer_grid_y = floor_div(depth, aquifer_y_scale);
+    for (int32_t oy = -1; oy <= 1; ++oy) for (int32_t ox = -1; ox <= 1; ++ox) {
+        const int32_t gx = aquifer_grid_x + ox;
+        const int32_t gy = aquifer_grid_y + oy;
+        if (gy < 1 || unit_hash(seed_, gx, gy, 0x9301) < 0.84) continue;
+        const int32_t center_x = gx * aquifer_x_scale + aquifer_x_scale / 2 + static_cast<int32_t>(field_hash(seed_, gx, gy, 0x9303) % 81u) - 40;
+        const int32_t center_y = surface_height_at_v3(center_x) + gy * aquifer_y_scale + aquifer_y_scale / 2;
+        const int32_t rx = 18 + static_cast<int32_t>(field_hash(seed_, gx, gy, 0x9305) % 11u);
+        const int32_t ry = 11 + static_cast<int32_t>(field_hash(seed_, gx, gy, 0x9307) % 8u);
+        const Vector2i delta = cell - Vector2i(center_x, center_y);
+        const int64_t inner = static_cast<int64_t>(delta.x) * delta.x * ry * ry + static_cast<int64_t>(delta.y) * delta.y * rx * rx;
+        if (inner <= static_cast<int64_t>(rx) * rx * ry * ry) return CAVE_CAVERN;
+        const int32_t shell_rx = rx + 4;
+        const int32_t shell_ry = ry + 4;
+        const int64_t shell = static_cast<int64_t>(delta.x) * delta.x * shell_ry * shell_ry + static_cast<int64_t>(delta.y) * delta.y * shell_rx * shell_rx;
+        if (shell <= static_cast<int64_t>(shell_rx) * shell_rx * shell_ry * shell_ry) return CAVE_NONE;
+    }
+
+    constexpr int32_t cave_x_scale = 256;
+    constexpr int32_t cave_y_scale = 192;
+    const int32_t grid_x = floor_div(cell.x, cave_x_scale);
+    const int32_t grid_y = floor_div(depth, cave_y_scale);
+    const auto chamber_active = [this](int32_t gx, int32_t gy) {
+        const double density_adjustment = (world_settings_.cave_density - 0.52) * 0.20;
+        return gy >= 0 && unit_hash(seed_, gx, gy, 0x9401) > 0.39 - density_adjustment;
+    };
+    const auto chamber_center = [this](int32_t gx, int32_t gy) {
+        const int32_t x = gx * cave_x_scale + cave_x_scale / 2 + static_cast<int32_t>(field_hash(seed_, gx, gy, 0x9403) % 97u) - 48;
+        const int32_t y = surface_height_at_v3(x) + gy * cave_y_scale + cave_y_scale / 2 + static_cast<int32_t>(field_hash(seed_, gx, gy, 0x9405) % 49u) - 24;
+        return Vector2i(x, y);
+    };
+
+    for (int32_t oy = -1; oy <= 1; ++oy) for (int32_t ox = -1; ox <= 1; ++ox) {
+        const int32_t gx = grid_x + ox;
+        const int32_t gy = grid_y + oy;
+        if (!chamber_active(gx, gy)) continue;
+        const Vector2i center = chamber_center(gx, gy);
+        const bool rare_large = unit_hash(seed_, gx, gy, 0x9407) > 0.965;
+        const int32_t rx = (rare_large ? 36 : 18) + static_cast<int32_t>(field_hash(seed_, gx, gy, 0x9409) % (rare_large ? 12u : 13u));
+        const int32_t ry = (rare_large ? 23 : 11) + static_cast<int32_t>(field_hash(seed_, gx, gy, 0x940b) % (rare_large ? 9u : 9u));
+        const Vector2i delta = cell - center;
+        if (delta.x * delta.x * ry * ry + delta.y * delta.y * rx * rx <= rx * rx * ry * ry)
+            return CAVE_CAVERN;
+        if (chamber_active(gx + 1, gy)) {
+            const int32_t width = 4 + static_cast<int32_t>(field_hash(seed_, gx, gy, 0x9411) % 4u);
+            if (segment_distance_squared(cell, center, chamber_center(gx + 1, gy)) <= width * width) return CAVE_TUNNEL;
+        }
+        if (unit_hash(seed_, gx, gy, 0x9413) > 0.72 && chamber_active(gx, gy + 1)) {
+            const int32_t width = 4 + static_cast<int32_t>(field_hash(seed_, gx, gy, 0x9415) % 3u);
+            if (segment_distance_squared(cell, center, chamber_center(gx, gy + 1)) <= width * width) return CAVE_TUNNEL;
+        }
+    }
+
+    return CAVE_NONE;
+}
+
+bool NativeSandWorld::coal_at_v3(Vector2i cell, int32_t surface) const {
+    const int32_t depth = cell.y - surface;
+    if (cell.x >= 46 && cell.x <= 70 && depth >= 26 && depth <= 38) return true;
+    if (depth < 48 || depth > 1500) return false;
+    constexpr int32_t vein_x_scale = 176;
+    constexpr int32_t vein_y_scale = 112;
+    const int32_t gx = floor_div(cell.x, vein_x_scale);
+    const int32_t gy = floor_div(depth, vein_y_scale);
+    for (int32_t oy = -1; oy <= 1; ++oy) for (int32_t ox = -1; ox <= 1; ++ox) {
+        const int32_t vx = gx + ox;
+        const int32_t vy = gy + oy;
+        if (unit_hash(seed_, vx, vy, 0x9501) < 0.70) continue;
+        const int32_t start_x = vx * vein_x_scale + 18 + static_cast<int32_t>(field_hash(seed_, vx, vy, 0x9503) % 61u);
+        const int32_t start_y = surface_height_at_v3(start_x) + vy * vein_y_scale + 30 + static_cast<int32_t>(field_hash(seed_, vx, vy, 0x9505) % 43u);
+        const Vector2i start{start_x, start_y};
+        const Vector2i end{start_x + 72 + static_cast<int32_t>(field_hash(seed_, vx, vy, 0x9507) % 70u),
+                           start_y + static_cast<int32_t>(field_hash(seed_, vx, vy, 0x9509) % 35u) - 17};
+        const int32_t radius = 2 + static_cast<int32_t>(field_hash(seed_, vx, vy, 0x950b) % 4u);
+        if (segment_distance_squared(cell, start, end) <= radius * radius) return true;
+    }
+    return false;
+}
+
+std::unique_ptr<NativeSandWorld::GeneratedChunk> NativeSandWorld::generate_chunk_data_v3(Vector2i coordinate) const {
+    const auto started = std::chrono::steady_clock::now();
+    auto generated = std::make_unique<GeneratedChunk>();
+    generated->coordinate = coordinate;
+    generated->temperature.fill(TEMPERATURE_AMBIENT);
+    const Vector2i origin = coordinate * CHUNK_SIZE;
+    std::array<uint8_t, CELLS_PER_CHUNK> cave_candidates{};
+    std::array<uint8_t, CELLS_PER_CHUNK> cave_keep{};
+    std::array<int32_t, 3> band_cells{};
+    std::array<std::vector<int32_t>, 3> band_candidates;
+
+    for (int32_t local_y = 0; local_y < CHUNK_SIZE; ++local_y) for (int32_t local_x = 0; local_x < CHUNK_SIZE; ++local_x) {
+        const int32_t index = local_y * CHUNK_SIZE + local_x;
+        const Vector2i cell = origin + Vector2i(local_x, local_y);
+        if (!is_inside_virtual_world(cell)) {
+            generated->material[index] = cell.y < -world_settings_.sky ? EMPTY : BEDROCK;
+            continue;
+        }
+        const int32_t surface = surface_height_at_v3(cell.x);
+        const int32_t depth = cell.y - surface;
+        if (cell.y < surface) {
+            generated->material[index] = surface_lake_at_v3(cell, surface) ? WATER : EMPTY;
+            continue;
+        }
+        if (cell.y >= world_settings_.depth - 10) {
+            generated->material[index] = BEDROCK;
+            continue;
+        }
+        const bool spawn_deposit = std::abs(cell.x) <= 104;
+        const int32_t deposit_group = floor_div(cell.x, 192);
+        const bool local_deposit = unit_hash(seed_, deposit_group, 0, 0x9601) > 0.61;
+        const int32_t sand_depth = 3 + static_cast<int32_t>(field_hash(seed_, deposit_group, 0, 0x9603) % 5u);
+        if (depth < sand_depth && (spawn_deposit || local_deposit)) {
+            generated->material[index] = SAND;
+            generated->provenance[index] = static_cast<uint16_t>(geology_profile_id_at(cell));
+            generated->mineral_signature[index] = mineral_signature_for(cell);
+            continue;
+        }
+        generated->material[index] = coal_at_v3(cell, surface) ? COAL : STONE;
+        if (thermal_at_v2(cell, surface, macro_sample_for(seed_, {floor_div(cell.x, MACRO_SCALE), floor_div(cell.y, MACRO_SCALE)}))) {
+            const int32_t heat = 300 + static_cast<int32_t>(macro_sample_for(seed_, {floor_div(cell.x, MACRO_SCALE), floor_div(cell.y, MACRO_SCALE)}).thermal_tendency) / 12;
+            generated->temperature[index] = static_cast<uint16_t>(std::clamp<int32_t>(TEMPERATURE_AMBIENT + heat, TEMPERATURE_AMBIENT, 6200));
+        }
+        const int32_t roof = std::max(34, world_settings_.sediment_depth + 18);
+        if (depth < roof) continue;
+        const int32_t band = depth < 192 ? 0 : depth < 768 ? 1 : 2;
+        ++band_cells[band];
+        const int32_t cave_type = cave_type_at_v3(cell, surface);
+        if (cave_type != CAVE_NONE) {
+            cave_candidates[index] = static_cast<uint8_t>(cave_type);
+            band_candidates[band].push_back(index);
+        }
+    }
+
+    const std::array<double, 3> maximum_void_fraction{{0.12, 0.18, 0.14}};
+    for (int32_t band = 0; band < 3; ++band) {
+        auto &candidates = band_candidates[band];
+        const int32_t allowance = static_cast<int32_t>(std::floor(band_cells[band] * maximum_void_fraction[band]));
+        if (static_cast<int32_t>(candidates.size()) > allowance) {
+            std::sort(candidates.begin(), candidates.end(), [&](int32_t left, int32_t right) {
+                const auto support = [&](int32_t index) {
+                    const int32_t x = index % CHUNK_SIZE;
+                    const int32_t y = index / CHUNK_SIZE;
+                    int32_t count = 0;
+                    for (int32_t oy = -2; oy <= 2; ++oy) for (int32_t ox = -2; ox <= 2; ++ox) {
+                        const int32_t nx = x + ox;
+                        const int32_t ny = y + oy;
+                        if (nx >= 0 && ny >= 0 && nx < CHUNK_SIZE && ny < CHUNK_SIZE && cave_candidates[ny * CHUNK_SIZE + nx] != 0) ++count;
+                    }
+                    return count;
+                };
+                const int32_t left_support = support(left);
+                const int32_t right_support = support(right);
+                if (left_support != right_support) return left_support > right_support;
+                const Vector2i left_cell = origin + Vector2i(left % CHUNK_SIZE, left / CHUNK_SIZE);
+                const Vector2i right_cell = origin + Vector2i(right % CHUNK_SIZE, right / CHUNK_SIZE);
+                return field_hash(seed_, left_cell.x, left_cell.y, 0x9701) < field_hash(seed_, right_cell.x, right_cell.y, 0x9701);
+            });
+        }
+        const int32_t kept = std::min(allowance, static_cast<int32_t>(candidates.size()));
+        for (int32_t index = 0; index < kept; ++index) cave_keep[candidates[index]] = 1;
+    }
+
+    for (int32_t index = 0; index < CELLS_PER_CHUNK; ++index) {
+        if (cave_keep[index] == 0) continue;
+        const Vector2i cell = origin + Vector2i(index % CHUNK_SIZE, index / CHUNK_SIZE);
+        const int32_t surface = surface_height_at_v3(cell.x);
+        generated->material[index] = aquifer_at_v3(cell, surface) ? WATER : EMPTY;
+        generated->provenance[index] = 0;
+        generated->mineral_signature[index] = 0;
+        generated->temperature[index] = TEMPERATURE_AMBIENT;
+    }
+
+    apply_organic_features_to_generated(*generated);
+    generated->generation_usec = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started).count();
+    return generated;
+}
+
+int32_t NativeSandWorld::surface_height_at_v4(int32_t world_x) const {
+    const auto band = [this](int32_t x, int32_t scale, uint32_t salt, double amplitude) {
+        const int32_t anchor = floor_div(x, scale);
+        const int32_t local = x - anchor * scale;
+        const double left = unit_hash(seed_, anchor, 0, salt) * 2.0 - 1.0;
+        const double right = unit_hash(seed_, anchor + 1, 0, salt) * 2.0 - 1.0;
+        return (left + (right - left) * smooth(static_cast<double>(local) / scale)) * amplitude;
+    };
+    const double macro = band(world_x, 1024, 0xa101, world_settings_.surface_amplitude * 0.68);
+    const double meso = band(world_x, 256, 0xa103, world_settings_.surface_amplitude * 0.25);
+    const double micro = band(world_x, 64, 0xa105, world_settings_.surface_amplitude * 0.07);
+    int32_t surface = world_settings_.surface_baseline + static_cast<int32_t>(std::lround(macro + meso + micro));
+    const int32_t spawn_surface = world_settings_.surface_baseline + static_cast<int32_t>(std::lround(
+        band(0, 1024, 0xa101, world_settings_.surface_amplitude * 0.68) +
+        band(0, 256, 0xa103, world_settings_.surface_amplitude * 0.25)));
+    const int32_t distance = std::abs(world_x);
+    if (distance < 176) {
+        const double blend = smooth(static_cast<double>(distance) / 176.0);
+        surface = static_cast<int32_t>(std::lround(spawn_surface + (surface - spawn_surface) * blend));
+    }
+    return surface;
+}
+
+int32_t NativeSandWorld::geology_province_at_v4(Vector2i cell) const {
+    constexpr int32_t province_scale = 512;
+    const int32_t px = floor_div(cell.x, province_scale);
+    const int32_t py = floor_div(cell.y - surface_height_at_v4(cell.x), province_scale);
+    return static_cast<int32_t>(field_hash(seed_, px, py, 0xa111) % 5u);
+}
+
+int32_t NativeSandWorld::sediment_depth_at_v4(int32_t world_x, int32_t surface) const {
+    const int32_t slope = std::abs(surface_height_at_v4(world_x + 8) - surface_height_at_v4(world_x - 8));
+    const int32_t curvature = surface_height_at_v4(world_x - 32) + surface_height_at_v4(world_x + 32) - surface * 2;
+    const int32_t valley_bonus = std::clamp(curvature / 3, 0, 14);
+    const int32_t highland_penalty = std::clamp((world_settings_.surface_baseline - surface) / 12, 0, 8);
+    return std::clamp(14 + valley_bonus - slope / 2 - highland_penalty, 5, 28);
+}
+
+bool NativeSandWorld::surface_lake_at_v4(Vector2i cell, int32_t surface) const {
+    constexpr int32_t lake_scale = 1024;
+    const int32_t group = floor_div(cell.x, lake_scale);
+    for (int32_t offset = -1; offset <= 1; ++offset) {
+        const int32_t candidate = group + offset;
+        if (unit_hash(seed_, candidate, 0, 0xa201) < 0.74) continue;
+        const int32_t group_start = candidate * lake_scale;
+        int32_t center = group_start + lake_scale / 2;
+        int32_t basin_floor = std::numeric_limits<int32_t>::min();
+        for (int32_t sample = 2; sample <= 30; ++sample) {
+            const int32_t x = group_start + sample * lake_scale / 32;
+            const int32_t y = surface_height_at_v4(x);
+            if (y > basin_floor) { basin_floor = y; center = x; }
+        }
+        const int32_t radius = 54 + static_cast<int32_t>(field_hash(seed_, candidate, 0, 0xa203) % 55u);
+        if (std::abs(cell.x - center) > radius) continue;
+        const int32_t left_rim = surface_height_at_v4(center - radius);
+        const int32_t right_rim = surface_height_at_v4(center + radius);
+        const int32_t spill_level = std::max(left_rim, right_rim);
+        if (basin_floor < spill_level + 6) continue;
+        return cell.y >= spill_level && cell.y < surface;
+    }
+    return false;
+}
+
+bool NativeSandWorld::aquifer_at_v4(Vector2i cell, int32_t surface) const {
+    const int32_t depth = cell.y - surface;
+    const int32_t early_x = 190 + static_cast<int32_t>(field_hash(seed_, 0, 0, 0xa2f1) % 61u) - 30;
+    const int32_t early_y = surface_height_at_v4(early_x) + 166 + static_cast<int32_t>(field_hash(seed_, 0, 0, 0xa2f3) % 31u);
+    const int32_t early_rx = 27 + static_cast<int32_t>(field_hash(seed_, 0, 0, 0xa2f5) % 13u);
+    const int32_t early_ry = 13 + static_cast<int32_t>(field_hash(seed_, 0, 0, 0xa2f7) % 9u);
+    const Vector2i early_delta = cell - Vector2i(early_x, early_y);
+    if (static_cast<int64_t>(early_delta.x) * early_delta.x * early_ry * early_ry + static_cast<int64_t>(early_delta.y) * early_delta.y * early_rx * early_rx <= static_cast<int64_t>(early_rx) * early_rx * early_ry * early_ry)
+        return cell.y >= early_y - early_ry / 5;
+    constexpr int32_t scale_x = 640;
+    constexpr int32_t scale_y = 448;
+    const int32_t gx = floor_div(cell.x, scale_x);
+    const int32_t gy = floor_div(depth, scale_y);
+    for (int32_t oy = -1; oy <= 1; ++oy) for (int32_t ox = -1; ox <= 1; ++ox) {
+        const int32_t ax = gx + ox;
+        const int32_t ay = gy + oy;
+        if (ay < 0 || unit_hash(seed_, ax, ay, 0xa301) < 0.72) continue;
+        const int32_t center_x = ax * scale_x + scale_x / 2 + static_cast<int32_t>(field_hash(seed_, ax, ay, 0xa303) % 161u) - 80;
+        const int32_t center_y = surface_height_at_v4(center_x) + ay * scale_y + 176 + static_cast<int32_t>(field_hash(seed_, ax, ay, 0xa305) % 97u);
+        const int32_t rx = 28 + static_cast<int32_t>(field_hash(seed_, ax, ay, 0xa307) % 27u);
+        const int32_t ry = 15 + static_cast<int32_t>(field_hash(seed_, ax, ay, 0xa309) % 16u);
+        const Vector2i delta = cell - Vector2i(center_x, center_y);
+        const int64_t ellipse = static_cast<int64_t>(delta.x) * delta.x * ry * ry + static_cast<int64_t>(delta.y) * delta.y * rx * rx;
+        if (ellipse <= static_cast<int64_t>(rx) * rx * ry * ry) {
+            const int32_t water_table = center_y - ry / 5 + static_cast<int32_t>(field_hash(seed_, ax, ay, 0xa30b) % 5u);
+            return cell.y >= water_table;
+        }
+    }
+    return false;
+}
+
+int32_t NativeSandWorld::cave_type_at_v4(Vector2i cell, int32_t surface) const {
+    const int32_t depth = cell.y - surface;
+    const int32_t roof = std::max(46, world_settings_.sediment_depth + 26);
+    if (depth < roof || (std::abs(cell.x) < 104 && depth < 220)) return CAVE_NONE;
+
+    const int32_t early_x = 190 + static_cast<int32_t>(field_hash(seed_, 0, 0, 0xa2f1) % 61u) - 30;
+    const int32_t early_y = surface_height_at_v4(early_x) + 166 + static_cast<int32_t>(field_hash(seed_, 0, 0, 0xa2f3) % 31u);
+    const int32_t early_rx = 27 + static_cast<int32_t>(field_hash(seed_, 0, 0, 0xa2f5) % 13u);
+    const int32_t early_ry = 13 + static_cast<int32_t>(field_hash(seed_, 0, 0, 0xa2f7) % 9u);
+    const Vector2i early_delta = cell - Vector2i(early_x, early_y);
+    const int64_t early_inside = static_cast<int64_t>(early_delta.x) * early_delta.x * early_ry * early_ry + static_cast<int64_t>(early_delta.y) * early_delta.y * early_rx * early_rx;
+    if (early_inside <= static_cast<int64_t>(early_rx) * early_rx * early_ry * early_ry) return CAVE_POCKET;
+    const int32_t shell_rx = early_rx + 5, shell_ry = early_ry + 5;
+    const int64_t early_shell = static_cast<int64_t>(early_delta.x) * early_delta.x * shell_ry * shell_ry + static_cast<int64_t>(early_delta.y) * early_delta.y * shell_rx * shell_rx;
+    if (early_shell <= static_cast<int64_t>(shell_rx) * shell_rx * shell_ry * shell_ry) return CAVE_NONE;
+
+    constexpr int32_t aquifer_x = 640;
+    constexpr int32_t aquifer_y = 448;
+    const int32_t agx = floor_div(cell.x, aquifer_x);
+    const int32_t agy = floor_div(depth, aquifer_y);
+    for (int32_t oy = -1; oy <= 1; ++oy) for (int32_t ox = -1; ox <= 1; ++ox) {
+        const int32_t gx = agx + ox;
+        const int32_t gy = agy + oy;
+        if (gy < 0 || unit_hash(seed_, gx, gy, 0xa301) < 0.72) continue;
+        const int32_t cx = gx * aquifer_x + aquifer_x / 2 + static_cast<int32_t>(field_hash(seed_, gx, gy, 0xa303) % 161u) - 80;
+        const int32_t cy = surface_height_at_v4(cx) + gy * aquifer_y + 176 + static_cast<int32_t>(field_hash(seed_, gx, gy, 0xa305) % 97u);
+        const int32_t rx = 28 + static_cast<int32_t>(field_hash(seed_, gx, gy, 0xa307) % 27u);
+        const int32_t ry = 15 + static_cast<int32_t>(field_hash(seed_, gx, gy, 0xa309) % 16u);
+        const Vector2i d = cell - Vector2i(cx, cy);
+        const int64_t inside = static_cast<int64_t>(d.x) * d.x * ry * ry + static_cast<int64_t>(d.y) * d.y * rx * rx;
+        if (inside <= static_cast<int64_t>(rx) * rx * ry * ry) return CAVE_POCKET;
+        const int32_t sx = rx + 5, sy = ry + 5;
+        const int64_t shell = static_cast<int64_t>(d.x) * d.x * sy * sy + static_cast<int64_t>(d.y) * d.y * sx * sx;
+        if (shell <= static_cast<int64_t>(sx) * sx * sy * sy) return CAVE_NONE;
+    }
+
+    constexpr int32_t cave_x = 512;
+    constexpr int32_t cave_y = 384;
+    const int32_t grid_x = floor_div(cell.x, cave_x);
+    const int32_t grid_y = floor_div(depth, cave_y);
+    const auto active = [this](int32_t gx, int32_t gy) {
+        if (gy < 0) return false;
+        const int32_t province = static_cast<int32_t>(field_hash(seed_, floor_div(gx, 2), floor_div(gy, 2), 0xa401) % 5u);
+        const double threshold = province == 1 ? 0.34 : province == 3 ? 0.57 : 0.46;
+        return unit_hash(seed_, gx, gy, 0xa403) > threshold;
+    };
+    const auto center = [this](int32_t gx, int32_t gy) {
+        const int32_t x = gx * cave_x + cave_x / 2 + static_cast<int32_t>(field_hash(seed_, gx, gy, 0xa405) % 193u) - 96;
+        const int32_t y = surface_height_at_v4(x) + gy * cave_y + 128 + static_cast<int32_t>(field_hash(seed_, gx, gy, 0xa407) % 129u) - 64;
+        return Vector2i(x, y);
+    };
+    for (int32_t oy = -1; oy <= 1; ++oy) for (int32_t ox = -1; ox <= 1; ++ox) {
+        const int32_t gx = grid_x + ox;
+        const int32_t gy = grid_y + oy;
+        if (!active(gx, gy)) continue;
+        const Vector2i c = center(gx, gy);
+        const int32_t archetype = static_cast<int32_t>(field_hash(seed_, gx, gy, 0xa409) % 4u);
+        if (archetype == 0) {
+            const int32_t rx = 17 + static_cast<int32_t>(field_hash(seed_, gx, gy, 0xa40b) % 18u);
+            const int32_t ry = 10 + static_cast<int32_t>(field_hash(seed_, gx, gy, 0xa40d) % 12u);
+            const Vector2i d = cell - c;
+            if (static_cast<int64_t>(d.x) * d.x * ry * ry + static_cast<int64_t>(d.y) * d.y * rx * rx <= static_cast<int64_t>(rx) * rx * ry * ry) return CAVE_CAVERN;
+        } else if (archetype == 1) {
+            const Vector2i end = center(gx + 1, gy + (field_hash(seed_, gx, gy, 0xa40f) % 3u == 0u ? 1 : 0));
+            const Vector2i midpoint = (c + end) / 2 + Vector2i(static_cast<int32_t>(field_hash(seed_, gx, gy, 0xa410) % 17u) - 8,
+                                                               static_cast<int32_t>(field_hash(seed_, gx, gy, 0xa412) % 53u) - 26);
+            const int32_t width = 4 + static_cast<int32_t>(field_hash(seed_, gx, gy, 0xa411) % 5u);
+            if (std::min(segment_distance_squared(cell, c, midpoint), segment_distance_squared(cell, midpoint, end)) <= width * width) return CAVE_TUNNEL;
+        } else if (archetype == 2) {
+            const int32_t lean = static_cast<int32_t>(field_hash(seed_, gx, gy, 0xa413) % 65u) - 32;
+            const Vector2i end = c + Vector2i(lean, 130 + static_cast<int32_t>(field_hash(seed_, gx, gy, 0xa415) % 111u));
+            const Vector2i midpoint = (c + end) / 2 + Vector2i(static_cast<int32_t>(field_hash(seed_, gx, gy, 0xa416) % 31u) - 15, 0);
+            if (std::min(segment_distance_squared(cell, c, midpoint), segment_distance_squared(cell, midpoint, end)) <= 9) return CAVE_CRACK;
+        } else if (gy >= 1 && unit_hash(seed_, gx, gy, 0xa417) > 0.70) {
+            const int32_t rx = 45 + static_cast<int32_t>(field_hash(seed_, gx, gy, 0xa419) % 34u);
+            const int32_t ry = 25 + static_cast<int32_t>(field_hash(seed_, gx, gy, 0xa41b) % 23u);
+            const Vector2i d = cell - c;
+            if (static_cast<int64_t>(d.x) * d.x * ry * ry + static_cast<int64_t>(d.y) * d.y * rx * rx <= static_cast<int64_t>(rx) * rx * ry * ry) return CAVE_CAVERN;
+        }
+        if (gy == 0 && unit_hash(seed_, gx, gy, 0xa41d) > 0.94) {
+            const Vector2i mouth{c.x, surface_height_at_v4(c.x) - 1};
+            if (segment_distance_squared(cell, mouth, c) <= 9) return CAVE_SHAFT;
+        }
+    }
+    return CAVE_NONE;
+}
+
+bool NativeSandWorld::coal_at_v4(Vector2i cell, int32_t surface) const {
+    const int32_t depth = cell.y - surface;
+    if (cell.x >= 48 && cell.x <= 82 && depth >= 38 && depth <= 48) return true;
+    if (depth < 52 || depth > 2100) return false;
+    constexpr int32_t scale_x = 224, scale_y = 160;
+    const int32_t gx = floor_div(cell.x, scale_x), gy = floor_div(depth, scale_y);
+    for (int32_t oy = -1; oy <= 1; ++oy) for (int32_t ox = -1; ox <= 1; ++ox) {
+        const int32_t vx = gx + ox, vy = gy + oy;
+        if (unit_hash(seed_, vx, vy, 0xa501) < 0.68) continue;
+        const int32_t sx = vx * scale_x + 20 + static_cast<int32_t>(field_hash(seed_, vx, vy, 0xa503) % 81u);
+        const int32_t sy = surface_height_at_v4(sx) + vy * scale_y + 44 + static_cast<int32_t>(field_hash(seed_, vx, vy, 0xa505) % 55u);
+        const Vector2i start{sx, sy};
+        const Vector2i end{sx + 86 + static_cast<int32_t>(field_hash(seed_, vx, vy, 0xa507) % 92u), sy + static_cast<int32_t>(field_hash(seed_, vx, vy, 0xa509) % 51u) - 25};
+        const int32_t radius = 2 + static_cast<int32_t>(field_hash(seed_, vx, vy, 0xa50b) % 4u);
+        if (segment_distance_squared(cell, start, end) <= radius * radius) return true;
+    }
+    return false;
+}
+
+std::unique_ptr<NativeSandWorld::GeneratedChunk> NativeSandWorld::generate_chunk_data_v4(Vector2i coordinate) const {
+    const auto started = std::chrono::steady_clock::now();
+    auto generated = std::make_unique<GeneratedChunk>();
+    generated->coordinate = coordinate;
+    generated->temperature.fill(TEMPERATURE_AMBIENT);
+    const Vector2i origin = coordinate * CHUNK_SIZE;
+    std::array<uint8_t, CELLS_PER_CHUNK> cave_candidates{};
+    std::array<uint8_t, CELLS_PER_CHUNK> cave_keep{};
+    std::array<int32_t, 3> band_cells{};
+    std::array<std::vector<int32_t>, 3> band_candidates;
+    std::array<int32_t, CHUNK_SIZE> surfaces{};
+    std::array<int32_t, CHUNK_SIZE> sediments{};
+    std::array<int32_t, CHUNK_SIZE> sand_depths{};
+    std::array<uint8_t, CHUNK_SIZE> supported_surfaces{};
+    std::array<uint8_t, CHUNK_SIZE> sand_columns{};
+    for (int32_t lx = 0; lx < CHUNK_SIZE; ++lx) {
+        const int32_t world_x = origin.x + lx;
+        const int32_t surface = surface_height_at_v4(world_x);
+        const int32_t slope = std::abs(surface_height_at_v4(world_x + 3) - surface_height_at_v4(world_x - 3));
+        const int32_t deposit = floor_div(world_x, 256);
+        const int32_t spawn_center = static_cast<int32_t>(field_hash(seed_, 0, 0, 0xa5f1) % 97u) - 48;
+        const int32_t spawn_radius = 22 + static_cast<int32_t>(field_hash(seed_, 0, 0, 0xa5f3) % 17u);
+        const int32_t deposit_center = deposit * 256 + 48 + static_cast<int32_t>(field_hash(seed_, deposit, 0, 0xa5f5) % 161u);
+        const int32_t deposit_radius = 28 + static_cast<int32_t>(field_hash(seed_, deposit, 0, 0xa5f7) % 37u);
+        surfaces[lx] = surface;
+        sediments[lx] = sediment_depth_at_v4(world_x, surface);
+        sand_depths[lx] = 4 + static_cast<int32_t>(field_hash(seed_, deposit, 0, 0xa603) % 7u);
+        supported_surfaces[lx] = surface_height_at_v4(world_x - 1) <= surface + 1 && surface_height_at_v4(world_x + 1) <= surface + 1;
+        sand_columns[lx] = std::abs(world_x - spawn_center) <= spawn_radius ||
+            (unit_hash(seed_, deposit, 0, 0xa601) > 0.55 && std::abs(world_x - deposit_center) <= deposit_radius && slope <= 2);
+    }
+    for (int32_t ly = 0; ly < CHUNK_SIZE; ++ly) for (int32_t lx = 0; lx < CHUNK_SIZE; ++lx) {
+        const int32_t index = ly * CHUNK_SIZE + lx;
+        const Vector2i cell = origin + Vector2i(lx, ly);
+        if (!is_inside_virtual_world(cell)) { generated->material[index] = cell.y < -world_settings_.sky ? EMPTY : BEDROCK; continue; }
+        const int32_t surface = surfaces[lx];
+        const int32_t depth = cell.y - surface;
+        if (depth < 0) { generated->material[index] = surface_lake_at_v4(cell, surface) ? WATER : EMPTY; continue; }
+        if (cell.y >= world_settings_.depth - 10) { generated->material[index] = BEDROCK; continue; }
+        const int32_t province = static_cast<int32_t>(field_hash(seed_, floor_div(cell.x, 512), floor_div(depth, 512), 0xa111) % 5u);
+        const int32_t sediment = sediments[lx];
+        if (depth < sand_depths[lx] && supported_surfaces[lx] != 0 && sand_columns[lx] != 0) {
+            generated->material[index] = SAND;
+            generated->provenance[index] = static_cast<uint16_t>(geology_profile_id_at(cell));
+            generated->mineral_signature[index] = mineral_signature_for(cell);
+        } else {
+            generated->material[index] = coal_at_v4(cell, surface) ? COAL : STONE;
+            const int32_t layer = depth < std::max(3, sediment / 3) ? 1 : depth < sediment ? 2 : depth < sediment + 12 ? 3 : 4;
+            generated->provenance[index] = static_cast<uint16_t>(0x8000u | ((layer & 7) << 8) | (province & 0xff));
+            generated->mineral_signature[index] = static_cast<uint16_t>(field_hash(seed_, floor_div(cell.x, 24), floor_div(depth, 18), 0xa605) & 0xffffu);
+        }
+        const int32_t roof = std::max(46, world_settings_.sediment_depth + 26);
+        if (depth < roof) continue;
+        const int32_t band = depth < 224 ? 0 : depth < 896 ? 1 : 2;
+        ++band_cells[band];
+        const int32_t cave = cave_type_at_v4(cell, surface);
+        if (cave != CAVE_NONE) { cave_candidates[index] = static_cast<uint8_t>(cave); band_candidates[band].push_back(index); }
+    }
+    const std::array<double, 3> caps{{0.13, 0.20, 0.16}};
+    for (int32_t band = 0; band < 3; ++band) {
+        auto &items = band_candidates[band];
+        const int32_t allowance = static_cast<int32_t>(std::floor(band_cells[band] * caps[band]));
+        if (static_cast<int32_t>(items.size()) > allowance) std::sort(items.begin(), items.end(), [&](int32_t a, int32_t b) {
+            const int32_t kind_a = cave_candidates[a], kind_b = cave_candidates[b];
+            const int32_t priority_a = kind_a == CAVE_POCKET ? 4 : kind_a == CAVE_TUNNEL ? 3 : kind_a == CAVE_SHAFT ? 2 : 1;
+            const int32_t priority_b = kind_b == CAVE_POCKET ? 4 : kind_b == CAVE_TUNNEL ? 3 : kind_b == CAVE_SHAFT ? 2 : 1;
+            if (priority_a != priority_b) return priority_a > priority_b;
+            const auto support = [&](int32_t item) {
+                const int32_t x = item % CHUNK_SIZE, y = item / CHUNK_SIZE;
+                int32_t count = 0;
+                for (int32_t oy = -2; oy <= 2; ++oy) for (int32_t ox = -2; ox <= 2; ++ox) {
+                    const int32_t nx = x + ox, ny = y + oy;
+                    if (nx >= 0 && ny >= 0 && nx < CHUNK_SIZE && ny < CHUNK_SIZE && cave_candidates[ny * CHUNK_SIZE + nx] != 0) ++count;
+                }
+                return count;
+            };
+            const int32_t support_a = support(a), support_b = support(b);
+            if (support_a != support_b) return support_a > support_b;
+            const Vector2i ca = origin + Vector2i(a % CHUNK_SIZE, a / CHUNK_SIZE);
+            const Vector2i cb = origin + Vector2i(b % CHUNK_SIZE, b / CHUNK_SIZE);
+            return field_hash(seed_, ca.x, ca.y, 0xa701) < field_hash(seed_, cb.x, cb.y, 0xa701);
+        });
+        const int32_t kept = std::min(allowance, static_cast<int32_t>(items.size()));
+        for (int32_t index = 0; index < kept; ++index) cave_keep[items[index]] = 1;
+    }
+    for (int32_t pass = 0; pass < 2; ++pass) {
+        std::array<uint8_t, CELLS_PER_CHUNK> next = cave_keep;
+        for (int32_t index = 0; index < CELLS_PER_CHUNK; ++index) {
+            if (cave_keep[index] == 0) continue;
+            const int32_t x = index % CHUNK_SIZE, y = index / CHUNK_SIZE;
+            int32_t neighbors = 0;
+            for (const Vector2i direction : {Vector2i(-1,0), Vector2i(1,0), Vector2i(0,-1), Vector2i(0,1)}) {
+                const int32_t nx = x + direction.x, ny = y + direction.y;
+                if (nx >= 0 && ny >= 0 && nx < CHUNK_SIZE && ny < CHUNK_SIZE && cave_keep[ny * CHUNK_SIZE + nx] != 0) ++neighbors;
+            }
+            if (neighbors == 0) next[index] = 0;
+        }
+        cave_keep = next;
+    }
+    for (int32_t index = 0; index < CELLS_PER_CHUNK; ++index) {
+        if (cave_keep[index] == 0) continue;
+        const Vector2i cell = origin + Vector2i(index % CHUNK_SIZE, index / CHUNK_SIZE);
+        const int32_t surface = surface_height_at_v4(cell.x);
+        generated->material[index] = aquifer_at_v4(cell, surface) ? WATER : EMPTY;
+        generated->provenance[index] = 0;
+        generated->mineral_signature[index] = 0;
+        generated->temperature[index] = TEMPERATURE_AMBIENT;
+    }
+    apply_organic_features_to_generated(*generated);
+    generated->generation_usec = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started).count();
+    return generated;
+}
+
 String NativeSandWorld::get_generator_settings_hash() const {
     uint32_t hash = 2166136261u;
     const std::array<int32_t, 11> values{{world_settings_.width, world_settings_.depth, world_settings_.sky,
@@ -329,16 +926,34 @@ Dictionary NativeSandWorld::get_world_identity() const {
 
 Dictionary NativeSandWorld::get_worldgen_v2_architecture() const {
     Dictionary result;
-    result["generation_version"] = 2;
+    result["generation_version"] = world_settings_.generation_version >= 5 ? 5 :
+        world_settings_.generation_version >= 4 ? 4 : world_settings_.generation_version >= 3 ? 3 : 2;
     result["macro_scale_cells"] = MACRO_SCALE;
-    result["passes"] = Array::make("macro_world", "surface", "depth_regions", "cave_systems", "aquifers", "geology",
-                                    "thermal_regions", "authored_features", "spawn_validation", "initial_stabilization");
-    result["cave_grammars"] = Array::make("CAVERN", "TUNNEL", "CRACK", "SHAFT", "POCKET");
+    result["passes"] = world_settings_.generation_version >= 4 ?
+        Array::make("macro_provinces", "multiscale_surface", "surface_profile", "geological_strata", "cave_archetypes",
+                    "analytic_reservoirs", "sediment_deposits", "hosted_ore_veins", "spawn_quality", "stability_validation") :
+        world_settings_.generation_version >= 3 ?
+        Array::make("macro_world", "supported_surface", "solid_depth_regions", "bounded_cave_systems", "contained_water",
+                    "hosted_ore_veins", "thermal_regions", "organic_features", "stability_validation") :
+        Array::make("macro_world", "surface", "depth_regions", "cave_systems", "aquifers", "geology",
+                    "thermal_regions", "authored_features", "spawn_validation", "initial_stabilization");
+    result["cave_grammars"] = world_settings_.generation_version >= 4 ?
+        Array::make("DIRECTIONAL_TUNNEL", "CHAMBER", "FISSURE", "RARE_LARGE_CAVERN", "SURFACE_ENTRANCE", "FLOODED_POCKET") :
+        world_settings_.generation_version >= 3 ?
+        Array::make("CHAMBER", "TUNNEL", "POCKET", "RARE_LARGE_CHAMBER") :
+        Array::make("CAVERN", "TUNNEL", "CRACK", "SHAFT", "POCKET");
     result["depth_regions"] = Array::make("SURFACE", "SEDIMENT_SHALLOW", "UNDERGROUND", "CAVERNS", "DEEP_THERMAL", "BEDROCK");
     result["native_data_oriented"] = true;
     result["lazy_chunk_generation"] = true;
     result["physical_water"] = true;
     result["physical_temperature"] = true;
+    result["stable_initial_conditions"] = world_settings_.generation_version >= 3;
+    result["void_fraction_limits"] = world_settings_.generation_version >= 4 ? Array::make(0.13, 0.20, 0.16) : Array::make(0.12, 0.18, 0.14);
+    result["minimum_surface_roof_cells"] = world_settings_.generation_version >= 4 ? std::max(46, world_settings_.sediment_depth + 26) :
+        world_settings_.generation_version >= 3 ? std::max(34, world_settings_.sediment_depth + 18) : world_settings_.sediment_depth + 10;
+    result["macro_region_scale_cells"] = world_settings_.generation_version >= 4 ? 512 : MACRO_SCALE;
+    result["generation_halo_cells"] = world_settings_.generation_version >= 4 ? 640 : 256;
+    result["chunk_order_independent_descriptors"] = world_settings_.generation_version >= 4;
     result["spawn_correction_changes_seed"] = false;
     result["generator_guarantees"] = Array::make("RAW_SAND_AT_SPAWN", "EARLY_COAL_VEIN", "EARLY_CAVE_ROUTE",
                                                   "EARLY_WATER_CAVERN", "THERMAL_SPAWN_EXCLUSION");
@@ -372,12 +987,122 @@ Dictionary NativeSandWorld::get_macro_preview(int32_t width, int32_t height) con
     PackedByteArray pixels;
     pixels.resize(static_cast<int64_t>(width) * height * 4);
     uint8_t *output = pixels.ptrw();
+
+    // V5 postcard: one column solve per preview column rather than per pixel, and a fixed
+    // vertical datum so the horizon shows real relief.
+    constexpr int32_t V5_PREVIEW_STEP_X = 6;
+    constexpr int32_t V5_PREVIEW_STEP_Y = 3;
+    std::vector<V5Column> preview_columns;
+    std::vector<int32_t> preview_far;
+    int32_t v5_datum = 0;
+    if (world_settings_.generation_version >= 5) {
+        v5_datum = surface_height_at_v5(0);
+        preview_columns.resize(width);
+        preview_far.resize(width);
+        V5Context probe;
+        for (int32_t x = 0; x < width; ++x) {
+            const int32_t wide_x = (x - width / 2) * V5_PREVIEW_STEP_X;
+            probe.origin = Vector2i(wide_x, 0);
+            probe.padded_origin = probe.origin;
+            v5_build_bed_cumulative(probe);
+            v5_prepare_lakes(probe);
+            v5_fill_column(probe, preview_columns[x], wide_x, v5_datum + 240);
+            preview_far[x] = surface_height_at_v5(wide_x * 4 + 5600);
+        }
+    }
+
     for (int32_t y = 0; y < height; ++y) {
         for (int32_t x = 0; x < width; ++x) {
-            const int32_t macro_x = x - width / 2;
+            const int32_t preview_x = (x - width / 2) * 4;
+            const int32_t macro_x = floor_div(preview_x, MACRO_SCALE);
             const MacroSample sample = macro_sample_for(seed_, {macro_x, y / 8});
-            const int32_t surface_pixel = height / 5 + sample.surface_elevation / 8;
+            const int32_t elevation = world_settings_.generation_version >= 4 ? surface_height_at_v4(preview_x) :
+                world_settings_.generation_version >= 3 ? surface_height_at_v3(preview_x) : sample.surface_elevation;
+            const int32_t surface_pixel = (world_settings_.generation_version >= 4 ? height / 4 : height / 5) + elevation / 8;
             const int64_t index = (static_cast<int64_t>(y) * width + x) * 4;
+            if (world_settings_.generation_version >= 5) {
+                // A landscape glimpse, not a geological column. Caves, ore and groundwater
+                // stay undiscovered; only what a player could see from the surface is shown.
+                const int32_t horizon = height * 44 / 100;
+                const V5Column &column = preview_columns[x];
+                const int32_t world_y = v5_datum + (y - horizon) * V5_PREVIEW_STEP_Y;
+                const int32_t depth_cells = world_y - column.surface;
+
+                if (column.lake_mass > 0 && world_y >= column.lake_level && depth_cells < 0) {
+                    output[index] = 34; output[index + 1] = 120; output[index + 2] = 162; output[index + 3] = 255;
+                } else if (depth_cells < 0) {
+                    const double sky = static_cast<double>(y) / std::max(1, horizon);
+                    output[index] = static_cast<uint8_t>(11 + sky * 20);
+                    output[index + 1] = static_cast<uint8_t>(28 + sky * 30);
+                    output[index + 2] = static_cast<uint8_t>(40 + sky * 32);
+                    output[index + 3] = 255;
+                    if (world_y >= preview_far[x]) { output[index] = 20; output[index + 1] = 42; output[index + 2] = 50; }
+                    // Irregular canopy suggestion where the biome supports vegetation.
+                    const uint32_t canopy = hash_2d(seed_, {x, 0}, 0x51a7) % 100u;
+                    if (depth_cells >= -12 && v5_biome_profile(column.biome).vegetation > 0.4 && canopy < 34u) {
+                        output[index] = 44; output[index + 1] = 88; output[index + 2] = 46;
+                    }
+                } else {
+                    int32_t rock;
+                    if (depth_cells < column.soil) rock = 8;
+                    else if (depth_cells < column.sediment) rock = 9;
+                    else if (depth_cells < column.weathered) rock = 10;
+                    else {
+                        int32_t bed = column.bed_first + column.bed_stored;
+                        for (int32_t offset = 0; offset < column.bed_stored; ++offset) {
+                            if (world_y < column.bed_y[offset]) { bed = column.bed_first + offset; break; }
+                        }
+                        rock = v5_bed_rock_at(column.province, bed, world_y);
+                    }
+                    float rgb[3];
+                    if (depth_cells < column.sand_depth) {
+                        rgb[0] = 0.86f; rgb[1] = 0.74f; rgb[2] = 0.47f;
+                    } else {
+                        const V5RockProfile &profile = v5_rock_profile(rock);
+                        v5_profile_colour(static_cast<uint16_t>(profile.silica | (profile.iron << 5u) |
+                                                                (profile.heavy << 10u)), rgb);
+                    }
+                    const float shade = 1.0f - std::min(0.26f, static_cast<float>(depth_cells) * 0.0007f);
+                    output[index] = static_cast<uint8_t>(std::clamp(rgb[0] * shade * 255.0f, 0.0f, 255.0f));
+                    output[index + 1] = static_cast<uint8_t>(std::clamp(rgb[1] * shade * 255.0f, 0.0f, 255.0f));
+                    output[index + 2] = static_cast<uint8_t>(std::clamp(rgb[2] * shade * 255.0f, 0.0f, 255.0f));
+                    output[index + 3] = 255;
+                }
+                continue;
+            }
+            if (world_settings_.generation_version >= 4) {
+                const int32_t world_y = (y - height / 4) * 8;
+                const int32_t far_surface = height / 3 + surface_height_at_v4(preview_x * 2 + 1800) / 13;
+                if (surface_lake_at_v4({preview_x, world_y}, elevation)) {
+                    output[index] = 24; output[index + 1] = 126; output[index + 2] = 155; output[index + 3] = 255;
+                } else if (y < surface_pixel) {
+                    const double sky = static_cast<double>(y) / std::max(1, height);
+                    output[index] = static_cast<uint8_t>(12 + sky * 19);
+                    output[index + 1] = static_cast<uint8_t>(31 + sky * 28);
+                    output[index + 2] = static_cast<uint8_t>(43 + sky * 30);
+                    output[index + 3] = 255;
+                    if (y >= far_surface) { output[index] = 23; output[index + 1] = 47; output[index + 2] = 52; }
+                } else {
+                    const int32_t depth_cells = (y - surface_pixel) * 8;
+                    const int32_t sediment = sediment_depth_at_v4(preview_x, elevation);
+                    const int32_t province = geology_province_at_v4({preview_x, world_y});
+                    const std::array<std::array<uint8_t, 3>, 5> rock{{{{57,66,72}},{{68,61,72}},{{55,72,67}},{{75,66,54}},{{55,63,82}}}};
+                    if (depth_cells < std::max(4, sediment / 3)) {
+                        output[index] = 91; output[index + 1] = 77; output[index + 2] = 48;
+                    } else if (depth_cells < sediment) {
+                        output[index] = 126; output[index + 1] = 92; output[index + 2] = 55;
+                    } else if (depth_cells < sediment + 16) {
+                        output[index] = 94; output[index + 1] = 87; output[index + 2] = 72;
+                    } else {
+                        const int32_t stripe = floor_div(world_y + static_cast<int32_t>(std::lround(std::sin(preview_x * 0.015) * 14.0)), 42) & 3;
+                        output[index] = static_cast<uint8_t>(std::clamp<int32_t>(rock[province][0] + stripe * 4, 0, 255));
+                        output[index + 1] = static_cast<uint8_t>(std::clamp<int32_t>(rock[province][1] + stripe * 3, 0, 255));
+                        output[index + 2] = static_cast<uint8_t>(std::clamp<int32_t>(rock[province][2] + stripe * 5, 0, 255));
+                    }
+                    output[index + 3] = 255;
+                }
+                continue;
+            }
             if (y < surface_pixel) {
                 output[index] = 7; output[index + 1] = 15; output[index + 2] = 21; output[index + 3] = 255;
             } else {
@@ -394,7 +1119,16 @@ Dictionary NativeSandWorld::get_macro_preview(int32_t width, int32_t height) con
     result["width"] = width;
     result["height"] = height;
     result["pixels"] = pixels;
-    result["source"] = "macro_world_v2";
+    if (world_settings_.generation_version >= 5) {
+        result["world_min_x"] = -(width / 2) * V5_PREVIEW_STEP_X;
+        result["world_max_x"] = (width - width / 2) * V5_PREVIEW_STEP_X;
+        result["world_min_y"] = v5_datum - (height * 44 / 100) * V5_PREVIEW_STEP_Y;
+        result["world_max_y"] = v5_datum + (height - height * 44 / 100) * V5_PREVIEW_STEP_Y;
+        result["cells_per_pixel"] = Vector2i(V5_PREVIEW_STEP_X, V5_PREVIEW_STEP_Y);
+    }
+    result["source"] = world_settings_.generation_version >= 5 ? "macro_world_v5_postcard" :
+        world_settings_.generation_version >= 4 ? "macro_world_v4_postcard" :
+        world_settings_.generation_version >= 3 ? "macro_world_v3" : "macro_world_v2";
     result["hidden_geology_revealed"] = false;
     return result;
 }
@@ -699,10 +1433,15 @@ Dictionary NativeSandWorld::get_worldgen_pass_hashes(Rect2i chunk_area) const {
     for (int32_t y = first.y; y < end.y; y += 8) {
         for (int32_t x = first.x; x < end.x; x += 8) {
             const Vector2i cell{x, y};
-            const int32_t surface = surface_height_at_v2(x);
+            const int32_t surface = world_settings_.generation_version >= 5 ? surface_height_at_v5(x) :
+                world_settings_.generation_version >= 4 ? surface_height_at_v4(x) :
+                world_settings_.generation_version >= 3 ? surface_height_at_v3(x) : surface_height_at_v2(x);
             const MacroSample macro = macro_sample_for(seed_, {floor_div(x, MACRO_SCALE), floor_div(y, MACRO_SCALE)});
-            const int32_t cave = cave_type_at_v2(cell, surface);
-            const bool aquifer = cave != CAVE_NONE && aquifer_at_v2(cell, surface, macro);
+            const int32_t cave = world_settings_.generation_version >= 5 ? 0 :
+                world_settings_.generation_version >= 4 ? cave_type_at_v4(cell, surface) :
+                world_settings_.generation_version >= 3 ? cave_type_at_v3(cell, surface) : cave_type_at_v2(cell, surface);
+            const bool aquifer = cave != CAVE_NONE && (world_settings_.generation_version >= 4 ? aquifer_at_v4(cell, surface) :
+                world_settings_.generation_version >= 3 ? aquifer_at_v3(cell, surface) : aquifer_at_v2(cell, surface, macro));
             const bool thermal = thermal_at_v2(cell, surface, macro);
             const int32_t geology = geology_profile_id_at(cell);
             const int32_t feature = macro.feature_density > 61100 ? static_cast<int32_t>(field_hash(seed_, floor_div(x, MACRO_SCALE), floor_div(y, MACRO_SCALE), 0x7101) % 4u) + 1 : 0;
@@ -726,11 +1465,16 @@ Dictionary NativeSandWorld::get_worldgen_debug_sample(Rect2i cell_area, int32_t 
     const Vector2i end = cell_area.position + cell_area.size;
     for (int32_t y = cell_area.position.y; y < end.y; y += stride) {
         for (int32_t x = cell_area.position.x; x < end.x; x += stride) {
-            const int32_t surface = surface_height_at_v2(x);
+            const int32_t surface = world_settings_.generation_version >= 5 ? surface_height_at_v5(x) :
+                world_settings_.generation_version >= 4 ? surface_height_at_v4(x) :
+                world_settings_.generation_version >= 3 ? surface_height_at_v3(x) : surface_height_at_v2(x);
             const MacroSample macro = macro_sample_for(seed_, {floor_div(x, MACRO_SCALE), floor_div(y, MACRO_SCALE)});
-            const int32_t cave = cave_type_at_v2({x, y}, surface);
+            const int32_t cave = world_settings_.generation_version >= 5 ? 0 :
+                world_settings_.generation_version >= 4 ? cave_type_at_v4({x, y}, surface) :
+                world_settings_.generation_version >= 3 ? cave_type_at_v3({x, y}, surface) : cave_type_at_v2({x, y}, surface);
             records.push_back(x); records.push_back(y); records.push_back(y - surface); records.push_back(cave);
-            records.push_back(cave != CAVE_NONE && aquifer_at_v2({x, y}, surface, macro));
+            records.push_back(cave != CAVE_NONE && (world_settings_.generation_version >= 4 ? aquifer_at_v4({x, y}, surface) :
+                world_settings_.generation_version >= 3 ? aquifer_at_v3({x, y}, surface) : aquifer_at_v2({x, y}, surface, macro)));
             records.push_back(thermal_at_v2({x, y}, surface, macro));
             records.push_back(macro.feature_density > 61100);
             records.push_back(macro.geology_province);
@@ -741,8 +1485,268 @@ Dictionary NativeSandWorld::get_worldgen_debug_sample(Rect2i cell_area, int32_t 
     return result;
 }
 
+Dictionary NativeSandWorld::get_generation_stability_report(Rect2i chunk_area) const {
+    Dictionary result;
+    if (chunk_area.size.x <= 0 || chunk_area.size.y <= 0 ||
+        static_cast<int64_t>(chunk_area.size.x) * chunk_area.size.y > 4096) return result;
+    std::array<int64_t, 3> band_cells{};
+    std::array<int64_t, 3> band_void{};
+    std::array<double, 3> maximum_chunk_void_fraction{};
+    int64_t unsupported_sand = 0;
+    int64_t active_water = 0;
+    int64_t water_vertical_drops = 0;
+    int64_t thin_solid_remnants = 0;
+    int64_t sand_cells = 0;
+    int64_t water_cells = 0;
+    int64_t empty_underground = 0;
+    int32_t active_sand_chunks = 0;
+    int32_t active_fluid_chunks = 0;
+    int32_t inspected_chunks = 0;
+    int32_t minimum_roof = std::numeric_limits<int32_t>::max();
+    PackedInt32Array active_water_sample;
+    PackedInt32Array unsupported_sand_sample;
+    const Vector2i chunk_end = chunk_area.position + chunk_area.size;
+    for (int32_t chunk_y = chunk_area.position.y; chunk_y < chunk_end.y; ++chunk_y) {
+        for (int32_t chunk_x = chunk_area.position.x; chunk_x < chunk_end.x; ++chunk_x) {
+            const Chunk *chunk = get_chunk({chunk_x, chunk_y});
+            if (chunk == nullptr || !chunk->generated) continue;
+            ++inspected_chunks;
+            if (chunk->active.valid()) ++active_sand_chunks;
+            if (chunk->fluid_active.valid()) ++active_fluid_chunks;
+            std::array<int64_t, 3> local_band_cells{};
+            std::array<int64_t, 3> local_band_void{};
+            const Vector2i origin = chunk->coordinate * CHUNK_SIZE;
+            for (int32_t index = 0; index < CELLS_PER_CHUNK; ++index) {
+                const Vector2i cell = origin + Vector2i(index % CHUNK_SIZE, index / CHUNK_SIZE);
+                const int32_t material = chunk->material[index];
+                const int32_t surface = world_settings_.generation_version >= 5 ? surface_height_at_v5(cell.x) :
+                    world_settings_.generation_version >= 4 ? surface_height_at_v4(cell.x) :
+                    world_settings_.generation_version >= 3 ? surface_height_at_v3(cell.x) :
+                    world_settings_.generation_version >= 2 ? surface_height_at_v2(cell.x) : surface_height_at(cell.x);
+                const int32_t depth = cell.y - surface;
+                if (material == SAND) {
+                    ++sand_cells;
+                    if (get_cell(cell + Vector2i(0, 1)) == EMPTY || get_cell(cell + Vector2i(-1, 1)) == EMPTY ||
+                        get_cell(cell + Vector2i(1, 1)) == EMPTY) {
+                        ++unsupported_sand;
+                        if (unsupported_sand_sample.size() < 32) { unsupported_sand_sample.push_back(cell.x); unsupported_sand_sample.push_back(cell.y); }
+                    }
+                } else if (material == WATER) {
+                    ++water_cells;
+                    const int32_t mass = water_mass_at(*chunk, index);
+                    const bool downward = fluid_destination_available(cell + Vector2i(0, 1)) && water_mass_at(cell + Vector2i(0, 1)) < 255;
+                    const bool lateral = (fluid_destination_available(cell + Vector2i(-1, 0)) && water_mass_at(cell + Vector2i(-1, 0)) + 1 < mass) ||
+                                         (fluid_destination_available(cell + Vector2i(1, 0)) && water_mass_at(cell + Vector2i(1, 0)) + 1 < mass);
+                    if (downward || lateral) {
+                        ++active_water;
+                        if (active_water_sample.size() < 32) { active_water_sample.push_back(cell.x); active_water_sample.push_back(cell.y); }
+                    }
+                    if (get_cell(cell + Vector2i(0, 1)) == EMPTY) ++water_vertical_drops;
+                }
+                if (depth < 0) continue;
+                const int32_t band = world_settings_.generation_version >= 4 ? (depth < 224 ? 0 : depth < 896 ? 1 : 2) :
+                    (depth < 192 ? 0 : depth < 768 ? 1 : 2);
+                // V5 carves whole systems rather than isolated candidate cells, so its budget
+                // is a genuine outlier guard rather than the mechanism that sets void volume.
+                ++band_cells[band];
+                ++local_band_cells[band];
+                const bool void_cell = material == EMPTY || material == WATER;
+                if (void_cell) {
+                    ++band_void[band];
+                    ++local_band_void[band];
+                    ++empty_underground;
+                    minimum_roof = std::min(minimum_roof, depth);
+                }
+                if (terrain_solid(material)) {
+                    const auto open = [this](Vector2i neighbor) {
+                        const int32_t value = get_cell(neighbor);
+                        return value == EMPTY || value == WATER;
+                    };
+                    if ((open(cell + Vector2i(-1, 0)) && open(cell + Vector2i(1, 0))) ||
+                        (open(cell + Vector2i(0, -1)) && open(cell + Vector2i(0, 1)))) ++thin_solid_remnants;
+                }
+            }
+            for (int32_t band = 0; band < 3; ++band) if (local_band_cells[band] > 0)
+                maximum_chunk_void_fraction[band] = std::max(maximum_chunk_void_fraction[band],
+                    static_cast<double>(local_band_void[band]) / local_band_cells[band]);
+        }
+    }
+    Array void_fraction;
+    Array maximum_void_fraction;
+    for (int32_t band = 0; band < 3; ++band) {
+        void_fraction.push_back(band_cells[band] == 0 ? 0.0 : static_cast<double>(band_void[band]) / band_cells[band]);
+        maximum_void_fraction.push_back(maximum_chunk_void_fraction[band]);
+    }
+    result["generation_version"] = world_settings_.generation_version;
+    result["chunks_inspected"] = inspected_chunks;
+    result["sand_cells"] = sand_cells;
+    result["water_cells"] = water_cells;
+    result["unsupported_sand_cells"] = unsupported_sand;
+    result["initially_active_water_cells"] = active_water;
+    result["initially_active_dynamic_cells"] = unsupported_sand + active_water;
+    result["water_vertical_drop_cells"] = water_vertical_drops;
+    result["thin_solid_remnants"] = thin_solid_remnants;
+    result["underground_void_cells"] = empty_underground;
+    result["void_fraction_by_depth_band"] = void_fraction;
+    result["maximum_chunk_void_fraction_by_depth_band"] = maximum_void_fraction;
+    result["minimum_surface_roof_cells"] = minimum_roof == std::numeric_limits<int32_t>::max() ? -1 : minimum_roof;
+    result["active_sand_chunks"] = active_sand_chunks;
+    result["active_fluid_chunks"] = active_fluid_chunks;
+    result["unsupported_sand_sample_xy"] = unsupported_sand_sample;
+    result["active_water_sample_xy"] = active_water_sample;
+    result["stable"] = unsupported_sand == 0 && active_water == 0 && water_vertical_drops == 0;
+    // V4 controlled void volume by capping each chunk, which is what sliced its cave systems
+    // into disconnected fragments at the chunk edges. V5 controls volume by descriptor
+    // density, so the budget applies to the aggregate: a single chunk sitting inside a large
+    // cavern is legitimately almost all void and must not be treated as an outlier.
+    result["void_fraction_limits"] = world_settings_.generation_version >= 5 ? Array::make(0.18, 0.26, 0.30) :
+        world_settings_.generation_version >= 4 ? Array::make(0.13, 0.20, 0.16) : Array::make(0.12, 0.18, 0.14);
+    result["void_budget_applies_to"] = world_settings_.generation_version >= 5 ? "region_aggregate" : "per_chunk_maximum";
+    result["chunk_void_fraction_limits"] = world_settings_.generation_version >= 5 ? Array::make(1.0, 1.0, 1.0) :
+        world_settings_.generation_version >= 4 ? Array::make(0.13, 0.20, 0.16) : Array::make(0.12, 0.18, 0.14);
+    return result;
+}
+
+Dictionary NativeSandWorld::get_worldgen_quality_report(Rect2i chunk_area) const {
+    Dictionary result;
+    if (chunk_area.size.x <= 0 || chunk_area.size.y <= 0 || static_cast<int64_t>(chunk_area.size.x) * chunk_area.size.y > 4096) return result;
+    const auto feature_key = [](int32_t x, int32_t y) {
+        return (static_cast<uint64_t>(static_cast<uint32_t>(x)) << 32u) | static_cast<uint32_t>(y);
+    };
+    std::unordered_set<uint64_t> sand_deposits, lakes, aquifers, cave_systems, ore_veins;
+    std::unordered_map<uint64_t, int64_t> sand_sizes, aquifer_sizes, ore_sizes;
+    std::array<int64_t, 6> cave_archetype_cells{};
+    std::array<int64_t, 5> province_cells{};
+    int64_t sand_cells = 0, water_cells = 0, water_mass = 0, coal_cells = 0;
+    int64_t surface_sand = 0, surface_soil = 0, surface_packed = 0, surface_weathered = 0, surface_rock = 0;
+    int64_t initially_active_sand = 0, initially_active_water = 0, isolated_voids = 0;
+    int32_t chunks_with_dynamic = 0, chunks_with_stable_dynamic = 0, inspected_chunks = 0;
+    const Vector2i chunk_end = chunk_area.position + chunk_area.size;
+    for (int32_t cy = chunk_area.position.y; cy < chunk_end.y; ++cy) for (int32_t cx = chunk_area.position.x; cx < chunk_end.x; ++cx) {
+        const Chunk *chunk = get_chunk({cx, cy});
+        if (chunk == nullptr || !chunk->generated) continue;
+        ++inspected_chunks;
+        bool has_dynamic = false;
+        const Vector2i origin = chunk->coordinate * CHUNK_SIZE;
+        for (int32_t index = 0; index < CELLS_PER_CHUNK; ++index) {
+            const int32_t material = chunk->material[index];
+            const Vector2i cell = origin + Vector2i(index % CHUNK_SIZE, index / CHUNK_SIZE);
+            const int32_t surface = world_settings_.generation_version >= 5 ? surface_height_at_v5(cell.x) :
+                world_settings_.generation_version >= 4 ? surface_height_at_v4(cell.x) :
+                world_settings_.generation_version >= 3 ? surface_height_at_v3(cell.x) : surface_height_at_v2(cell.x);
+            const int32_t depth = cell.y - surface;
+            if (material == SAND) {
+                ++sand_cells; has_dynamic = true;
+                const uint64_t key = feature_key(floor_div(cell.x, world_settings_.generation_version >= 4 ? 256 : 192), 0);
+                sand_deposits.insert(key); ++sand_sizes[key];
+            } else if (material == WATER) {
+                ++water_cells; has_dynamic = true; water_mass += water_mass_at(*chunk, index);
+                if (depth < 0) lakes.insert(feature_key(floor_div(cell.x, world_settings_.generation_version >= 4 ? 1024 : 768), 0));
+                else {
+                    const uint64_t key = feature_key(floor_div(cell.x, world_settings_.generation_version >= 4 ? 640 : 384),
+                                                     floor_div(depth, world_settings_.generation_version >= 4 ? 448 : 256));
+                    aquifers.insert(key); ++aquifer_sizes[key];
+                }
+            } else if (material == COAL) {
+                ++coal_cells;
+                const uint64_t key = feature_key(floor_div(cell.x, world_settings_.generation_version >= 4 ? 224 : 176),
+                                                 floor_div(depth, world_settings_.generation_version >= 4 ? 160 : 112));
+                ore_veins.insert(key); ++ore_sizes[key];
+            }
+            if (depth >= 0 && (material == EMPTY || material == WATER)) {
+                const int32_t cave = world_settings_.generation_version >= 5 ? 0 :
+                    world_settings_.generation_version >= 4 ? cave_type_at_v4(cell, surface) : cave_type_at_v3(cell, surface);
+                if (cave >= 0 && cave < static_cast<int32_t>(cave_archetype_cells.size())) ++cave_archetype_cells[cave];
+                cave_systems.insert(feature_key(floor_div(cell.x, world_settings_.generation_version >= 4 ? 512 : 256),
+                                                floor_div(depth, world_settings_.generation_version >= 4 ? 384 : 192)));
+                int32_t open_neighbors = 0;
+                for (const Vector2i d : {Vector2i(-1,0), Vector2i(1,0), Vector2i(0,-1), Vector2i(0,1)}) {
+                    const int32_t neighbor = get_cell(cell + d);
+                    open_neighbors += neighbor == EMPTY || neighbor == WATER;
+                }
+                isolated_voids += open_neighbors == 0;
+            }
+            if (material != EMPTY && depth >= 0) {
+                if (world_settings_.generation_version >= 5) ++province_cells[geology_province_at_v5(cell.x, cell.y)];
+                else if (world_settings_.generation_version >= 4) ++province_cells[geology_province_at_v4(cell)];
+            }
+        }
+        if (has_dynamic) {
+            ++chunks_with_dynamic;
+            if (!chunk->active.valid() && !chunk->fluid_active.valid()) ++chunks_with_stable_dynamic;
+        }
+        initially_active_sand += chunk->active.area();
+        initially_active_water += chunk->fluid_active.area();
+    }
+    std::vector<double> slopes, topsoil_depths, sand_size_values, aquifer_size_values, ore_size_values;
+    int32_t longest_flat_run = 0, current_flat_run = 0;
+    const int32_t first_x = chunk_area.position.x * CHUNK_SIZE;
+    const int32_t last_x = chunk_end.x * CHUNK_SIZE;
+    int32_t previous_surface = world_settings_.generation_version >= 5 ? surface_height_at_v5(first_x) :
+        world_settings_.generation_version >= 4 ? surface_height_at_v4(first_x) : surface_height_at_v3(first_x);
+    for (int32_t x = first_x; x < last_x; ++x) {
+        const int32_t surface = world_settings_.generation_version >= 5 ? surface_height_at_v5(x) :
+            world_settings_.generation_version >= 4 ? surface_height_at_v4(x) : surface_height_at_v3(x);
+        if (x > first_x) {
+            const int32_t slope = std::abs(surface - previous_surface);
+            slopes.push_back(slope);
+            current_flat_run = slope == 0 ? current_flat_run + 1 : 0;
+            longest_flat_run = std::max(longest_flat_run, current_flat_run);
+        }
+        previous_surface = surface;
+        if ((x - first_x) % 4 != 0) continue;
+        const int32_t material = get_cell({x, surface});
+        const int32_t tag = get_provenance({x, surface});
+        if (material == SAND) ++surface_sand;
+        else if (world_settings_.generation_version >= 5) {
+            // V5 stores a real geology profile; the rock family lives in the silica field.
+            switch ((tag & 31) >> 1) {
+                case 1: ++surface_soil; break;
+                case 2: ++surface_packed; break;
+                case 3: ++surface_weathered; break;
+                default: ++surface_rock; break;
+            }
+        } else if ((tag & 0x8000) != 0) {
+            const int32_t layer = (tag >> 8) & 7;
+            if (layer == 1) ++surface_soil; else if (layer == 2) ++surface_packed; else if (layer == 3) ++surface_weathered; else ++surface_rock;
+        } else ++surface_rock;
+        // V5 reports horizon depths through get_worldgen_v5_columns, which carries soil,
+        // sediment and weathering separately instead of collapsing them into one number.
+        if (world_settings_.generation_version == 4) topsoil_depths.push_back(sediment_depth_at_v4(x, surface));
+    }
+    for (const auto &[key, count] : sand_sizes) { (void)key; sand_size_values.push_back(static_cast<double>(count)); }
+    for (const auto &[key, count] : aquifer_sizes) { (void)key; aquifer_size_values.push_back(static_cast<double>(count)); }
+    for (const auto &[key, count] : ore_sizes) { (void)key; ore_size_values.push_back(static_cast<double>(count)); }
+    Dictionary content;
+    content["sand_cells"] = sand_cells; content["water_cells"] = water_cells; content["water_mass_units"] = water_mass;
+    content["sand_deposits"] = static_cast<int64_t>(sand_deposits.size()); content["surface_lakes"] = static_cast<int64_t>(lakes.size());
+    content["aquifers"] = static_cast<int64_t>(aquifers.size()); content["flooded_cave_pockets"] = static_cast<int64_t>(aquifers.size());
+    content["cave_systems"] = static_cast<int64_t>(cave_systems.size()); content["ore_veins"] = static_cast<int64_t>(ore_veins.size()); content["ore_cells"] = coal_cells;
+    content["initially_active_sand_cells"] = initially_active_sand; content["initially_active_water_cells"] = initially_active_water;
+    content["dynamic_region_percentage"] = inspected_chunks == 0 ? 0.0 : 100.0 * chunks_with_dynamic / inspected_chunks;
+    content["stable_dynamic_region_percentage"] = chunks_with_dynamic == 0 ? 0.0 : 100.0 * chunks_with_stable_dynamic / chunks_with_dynamic;
+    Dictionary surface_distribution;
+    surface_distribution["loose_sand"] = surface_sand; surface_distribution["topsoil"] = surface_soil;
+    surface_distribution["packed_sediment"] = surface_packed; surface_distribution["weathered_rock"] = surface_weathered; surface_distribution["exposed_rock"] = surface_rock;
+    Dictionary structure;
+    structure["surface_slope"] = distribution(std::move(slopes)); structure["longest_flat_run_cells"] = longest_flat_run;
+    structure["topsoil_depth"] = distribution(std::move(topsoil_depths)); structure["isolated_void_cells"] = isolated_voids;
+    structure["cave_tunnel_cells"] = cave_archetype_cells[CAVE_TUNNEL]; structure["cave_chamber_cells"] = cave_archetype_cells[CAVE_CAVERN];
+    structure["cave_fissure_cells"] = cave_archetype_cells[CAVE_CRACK]; structure["cave_entrance_cells"] = cave_archetype_cells[CAVE_SHAFT];
+    structure["cave_tunnel_chamber_ratio"] = cave_archetype_cells[CAVE_CAVERN] == 0 ? 0.0 : static_cast<double>(cave_archetype_cells[CAVE_TUNNEL]) / cave_archetype_cells[CAVE_CAVERN];
+    structure["sand_deposit_size"] = distribution(std::move(sand_size_values)); structure["aquifer_size"] = distribution(std::move(aquifer_size_values));
+    structure["ore_vein_size"] = distribution(std::move(ore_size_values));
+    Array provinces; for (const int64_t count : province_cells) provinces.push_back(count); structure["geology_province_cells"] = provinces;
+    result["generation_version"] = world_settings_.generation_version; result["chunks_inspected"] = inspected_chunks;
+    result["content"] = content; result["surface_material_distribution"] = surface_distribution; result["structure"] = structure;
+    return result;
+}
+
 Vector2i NativeSandWorld::get_character_spawn() const {
-    const int32_t surface = world_settings_.generation_version >= 2 ? surface_height_at_v2(0) : surface_height_at(0);
+    const int32_t surface = world_settings_.generation_version >= 5 ? surface_height_at_v5(0) :
+        world_settings_.generation_version >= 4 ? surface_height_at_v4(0) :
+        world_settings_.generation_version >= 3 ? surface_height_at_v3(0) :
+        world_settings_.generation_version >= 2 ? surface_height_at_v2(0) : surface_height_at(0);
     return {0, surface - 4};
 }
 

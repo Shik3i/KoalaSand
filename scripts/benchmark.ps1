@@ -30,7 +30,9 @@ $Benchmarks = @(
     'tests/benchmark_phase115.gd',
     'tests/benchmark_phase12.gd',
     'tests/benchmark_phase13.gd',
-    'tests/benchmark_phase135.gd'
+    'tests/benchmark_phase135.gd',
+    'tests/benchmark_p0_recovery.gd',
+    'tests/benchmark_p05_world_quality.gd'
 )
 $RenderedBenchmarks = @(
     'tests/benchmark_phase6_wire_render.gd',

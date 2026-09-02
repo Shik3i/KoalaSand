@@ -1,5 +1,9 @@
 # Save Format
 
+## Generation V4 compatibility
+
+New worlds store `generation_version = 4`. Existing V1/V2/V3 saves keep their stored generator identity and reproduce pristine chunks through the matching legacy dispatch. Save schema `1` is unchanged because the generation version was already part of world identity and snapshot settings. V4 is the P0.5 world-quality generator documented in `P05_WORLD_QUALITY_PASS.md`.
+
 ## Envelope schema 1
 
 ```text

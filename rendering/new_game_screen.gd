@@ -21,6 +21,15 @@ var _load_button: Button
 var _delete_button: Button
 var _recover_button: Button
 var _save_details: Label
+var _root_column: VBoxContainer
+var _mode_row: HBoxContainer
+var _content_row: HBoxContainer
+var _preview_frame: PanelContainer
+var _settings_panel: VBoxContainer
+var _start_button: Button
+var _existing_label: Label
+var _session_row: HBoxContainer
+var _diagnostics_button: Button
 
 
 func _ready() -> void:
@@ -35,94 +44,99 @@ func _build_ui() -> void:
 	var backdrop := IndustrialBackdrop.new()
 	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(backdrop)
-	var scroll := ScrollContainer.new()
-	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	scroll.offset_left = 24; scroll.offset_top = 18; scroll.offset_right = -24; scroll.offset_bottom = -18
-	add_child(scroll)
-	var center := VBoxContainer.new()
-	center.custom_minimum_size = Vector2(1240, 720)
-	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	center.add_theme_constant_override("separation", 14)
-	scroll.add_child(center)
-	var brand_rule := HSeparator.new(); center.add_child(brand_rule)
+	var margin := MarginContainer.new()
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 24)
+	margin.add_theme_constant_override("margin_top", 14)
+	margin.add_theme_constant_override("margin_right", 24)
+	margin.add_theme_constant_override("margin_bottom", 18)
+	add_child(margin)
+	_root_column = VBoxContainer.new()
+	_root_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_root_column.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_root_column.add_theme_constant_override("separation", 7)
+	margin.add_child(_root_column)
+	var brand_rule := HSeparator.new(); _root_column.add_child(brand_rule)
 	var title := Label.new()
 	title.text = "KOALASAND"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.theme_type_variation = "DisplayLabel"
-	center.add_child(title)
+	title.add_theme_font_size_override("font_size", 32)
+	_root_column.add_child(title)
 	var subtitle := Label.new()
 	subtitle.text = "Matter moves. Heat spreads. Factories emerge."
 	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	subtitle.theme_type_variation = "SecondaryLabel"
-	center.add_child(subtitle)
-	var version := Label.new(); version.text = BuildInfo.display(); version.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; version.theme_type_variation = "CaptionLabel"; center.add_child(version)
-	var worlds_label := Label.new(); worlds_label.text = "YOUR WORLDS"; worlds_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; worlds_label.theme_type_variation = "SectionTitleLabel"; center.add_child(worlds_label)
-	var session_row := HBoxContainer.new()
-	session_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	session_row.add_theme_constant_override("separation", 10)
-	center.add_child(session_row)
-	_continue_button = Button.new(); _continue_button.theme_type_variation = "PrimaryButton"; _continue_button.text = "Continue"; _continue_button.custom_minimum_size.x = 150; _continue_button.pressed.connect(_continue_latest); session_row.add_child(_continue_button)
-	_save_selector = OptionButton.new(); _save_selector.custom_minimum_size.x = 260; session_row.add_child(_save_selector)
-	_load_button = Button.new(); _load_button.text = "Load"; _load_button.pressed.connect(_load_selected); session_row.add_child(_load_button)
-	_recover_button = Button.new(); _recover_button.text = "Restore backup"; _recover_button.visible = false; _recover_button.pressed.connect(_recover_selected); session_row.add_child(_recover_button)
-	_delete_button = Button.new(); _delete_button.theme_type_variation = "DangerButton"; _delete_button.text = "Delete…"; _delete_button.pressed.connect(_confirm_delete); session_row.add_child(_delete_button)
-	var diagnostics := Button.new(); diagnostics.theme_type_variation = "QuietButton"; diagnostics.text = "Export diagnostics"; diagnostics.pressed.connect(func(): diagnostics_requested.emit()); session_row.add_child(diagnostics)
-	_save_details = Label.new(); _save_details.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; _save_details.theme_type_variation = "SecondaryLabel"; center.add_child(_save_details)
+	_root_column.add_child(subtitle)
+	var version := Label.new(); version.text = BuildInfo.display(); version.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; version.theme_type_variation = "CaptionLabel"; _root_column.add_child(version)
+	_existing_label = Label.new(); _existing_label.text = "CONTINUE"; _existing_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; _existing_label.theme_type_variation = "SectionTitleLabel"; _root_column.add_child(_existing_label)
+	_session_row = HBoxContainer.new()
+	_session_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	_session_row.add_theme_constant_override("separation", 8)
+	_root_column.add_child(_session_row)
+	_continue_button = Button.new(); _continue_button.theme_type_variation = "PrimaryButton"; _continue_button.text = "Continue"; _continue_button.custom_minimum_size.x = 132; _continue_button.pressed.connect(_continue_latest); _session_row.add_child(_continue_button)
+	_save_selector = OptionButton.new(); _save_selector.custom_minimum_size.x = 240; _session_row.add_child(_save_selector)
+	_load_button = Button.new(); _load_button.text = "Load"; _load_button.pressed.connect(_load_selected); _session_row.add_child(_load_button)
+	_recover_button = Button.new(); _recover_button.text = "Restore backup"; _recover_button.visible = false; _recover_button.pressed.connect(_recover_selected); _session_row.add_child(_recover_button)
+	_delete_button = Button.new(); _delete_button.theme_type_variation = "DangerButton"; _delete_button.text = "Delete…"; _delete_button.pressed.connect(_confirm_delete); _session_row.add_child(_delete_button)
+	_save_details = Label.new(); _save_details.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; _save_details.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS; _save_details.theme_type_variation = "CaptionLabel"; _root_column.add_child(_save_details)
 	_save_selector.item_selected.connect(_update_save_details)
-	var new_label := Label.new(); new_label.text = "NEW WORLD"; new_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; new_label.theme_type_variation = "SectionTitleLabel"; center.add_child(new_label)
+	var new_label := Label.new(); new_label.text = "NEW WORLD"; new_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; new_label.theme_type_variation = "SectionTitleLabel"; _root_column.add_child(new_label)
 
-	var cards_row := HBoxContainer.new()
-	cards_row.add_theme_constant_override("separation", 14)
-	center.add_child(cards_row)
+	_mode_row = HBoxContainer.new()
+	_mode_row.add_theme_constant_override("separation", 10)
+	_root_column.add_child(_mode_row)
 	var descriptions := [
-		"RECOMMENDED FIRST\nFree camera · build at any visible location\nPhysical Research progression enabled",
-		"PLAY AS THE KOALA\nMove, dig and fly · local vision and build range\nSame physical world and Research progression",
-		"EXPERIMENT FREELY\nFree camera · all materials and Components unlocked\nPhysics stays fully active; progression gates are off",
+		"RECOMMENDED · BUILD AND AUTOMATE",
+		"EXPLORE · DIG · BUILD LOCALLY",
+		"EXPERIMENT WITHOUT LIMITS",
 	]
 	for index in range(3):
 		var axes := GameModeCapabilities.preset(index)
 		var card := Button.new()
-		card.custom_minimum_size = Vector2(400, 124)
+		card.custom_minimum_size.y = 76
+		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		card.toggle_mode = true
-		card.text = "%s\n\n%s" % [str(axes.display_name).to_upper(), descriptions[index]]
-		card.add_theme_font_size_override("font_size", 15)
+		card.text = "%s\n%s" % [str(axes.display_name).capitalize(), descriptions[index]]
+		card.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		card.add_theme_font_size_override("font_size", 14)
 		card.pressed.connect(_select_preset.bind(index))
-		cards_row.add_child(card)
+		_mode_row.add_child(card)
 		_cards.append(card)
-	var choice_help := Label.new(); choice_help.text = "Which should I choose?  Factory teaches large-scale building · Character adds movement and discovery · Creative is for unrestricted experiments."; choice_help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; choice_help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; choice_help.theme_type_variation = "SecondaryLabel"; center.add_child(choice_help)
 
-	var content := HBoxContainer.new()
-	content.add_theme_constant_override("separation", 18)
-	center.add_child(content)
-	var preview_frame := PanelContainer.new(); preview_frame.theme_type_variation = "ElevatedPanel"; preview_frame.custom_minimum_size = Vector2(760, 340); content.add_child(preview_frame)
+	_content_row = HBoxContainer.new()
+	_content_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_content_row.add_theme_constant_override("separation", 14)
+	_root_column.add_child(_content_row)
+	_preview_frame = PanelContainer.new(); _preview_frame.theme_type_variation = "ElevatedPanel"; _preview_frame.size_flags_horizontal = Control.SIZE_EXPAND_FILL; _preview_frame.size_flags_stretch_ratio = 1.65; _content_row.add_child(_preview_frame)
 	_preview = TextureRect.new()
-	_preview.custom_minimum_size = Vector2(740, 330)
 	_preview.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_preview.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_preview.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	_preview.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	preview_frame.add_child(_preview)
-	var settings := VBoxContainer.new()
-	settings.custom_minimum_size = Vector2(400, 330)
-	settings.add_theme_constant_override("separation", 12)
-	content.add_child(settings)
+	_preview_frame.add_child(_preview)
+	_settings_panel = VBoxContainer.new()
+	_settings_panel.custom_minimum_size.x = 330
+	_settings_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_settings_panel.size_flags_stretch_ratio = 1.0
+	_settings_panel.add_theme_constant_override("separation", 6)
+	_content_row.add_child(_settings_panel)
 	var seed_label := Label.new()
-	seed_label.text = "WORLD IDENTITY"
+	seed_label.text = "WORLD SETUP"
 	seed_label.theme_type_variation = "SectionTitleLabel"
-	settings.add_child(seed_label)
+	_settings_panel.add_child(seed_label)
 	_world_name_input = LineEdit.new()
 	_world_name_input.placeholder_text = "World name"
 	_world_name_input.text = "New World"
-	settings.add_child(_world_name_input)
+	_settings_panel.add_child(_world_name_input)
 	_seed_input = LineEdit.new()
 	_seed_input.placeholder_text = "signed 64-bit integer"
 	_seed_input.text_submitted.connect(func(_text: String) -> void: _refresh_preview())
-	settings.add_child(_seed_input)
-	var seed_help := Label.new(); seed_help.text = "Leave this value unchanged for the shown world, or choose New seed. The same seed and generation version reproduce the same world."; seed_help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; seed_help.theme_type_variation = "CaptionLabel"; settings.add_child(seed_help)
+	_settings_panel.add_child(_seed_input)
 	var seed_actions := HBoxContainer.new()
-	settings.add_child(seed_actions)
+	seed_actions.add_theme_constant_override("separation", 6)
+	_settings_panel.add_child(seed_actions)
 	var randomize := Button.new()
-	randomize.text = "New seed"
+	randomize.text = "↻ Seed"
 	randomize.pressed.connect(_randomize_seed)
 	seed_actions.add_child(randomize)
 	var copy := Button.new()
@@ -139,25 +153,33 @@ func _build_ui() -> void:
 	_identity_label = Label.new()
 	_identity_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_identity_label.theme_type_variation = "SecondaryLabel"
-	settings.add_child(_identity_label)
+	_identity_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_settings_panel.add_child(_identity_label)
+	var note_row := HBoxContainer.new()
+	note_row.add_theme_constant_override("separation", 8)
+	_settings_panel.add_child(note_row)
 	var note := Label.new()
-	note.text = "The preview shows only surface terrain. Caves and deposits remain undiscovered."
+	note.text = "A glimpse of the landscape. Underground remains undiscovered."
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.theme_type_variation = "CaptionLabel"
-	settings.add_child(note)
-	var spacer := Control.new()
-	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	settings.add_child(spacer)
-	var start := Button.new()
-	start.theme_type_variation = "PrimaryButton"
-	start.text = "Create world"
-	start.custom_minimum_size = Vector2(0, 52)
-	start.add_theme_font_size_override("font_size", 18)
-	start.pressed.connect(_start)
-	settings.add_child(start)
+	note.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	note_row.add_child(note)
+	_diagnostics_button = Button.new()
+	_diagnostics_button.theme_type_variation = "QuietButton"
+	_diagnostics_button.text = "⋯"
+	_diagnostics_button.tooltip_text = "Diagnostics"
+	_diagnostics_button.pressed.connect(func(): diagnostics_requested.emit())
+	note_row.add_child(_diagnostics_button)
+	_start_button = Button.new()
+	_start_button.theme_type_variation = "PrimaryButton"
+	_start_button.text = "Create world"
+	_start_button.custom_minimum_size = Vector2(0, 46)
+	_start_button.add_theme_font_size_override("font_size", 17)
+	_start_button.pressed.connect(_start)
+	_settings_panel.add_child(_start_button)
 	_select_preset(GameModeCapabilities.Preset.FACTORY)
 	set_saved_worlds([])
-	KoalaSandTheme.animate_in(center, false, true)
+	KoalaSandTheme.animate_in(_root_column, false, true)
 
 
 func set_seed(seed: int) -> void:
@@ -169,6 +191,7 @@ func _select_preset(preset_id: int) -> void:
 	selected_preset = clampi(preset_id, 0, 2)
 	for index in range(_cards.size()):
 		_cards[index].button_pressed = index == selected_preset
+		_cards[index].theme_type_variation = "PrimaryButton" if index == selected_preset else "QuietButton"
 	_refresh_preview()
 
 
@@ -187,8 +210,8 @@ func _refresh_preview() -> void:
 	if _preview_world == null:
 		_preview_world = NativeSandWorld.new()
 	var seed := _seed_input.text.to_int()
-	_preview_world.configure_world({"seed": seed, "generation_version": 2}, 1)
-	var page: Dictionary = _preview_world.get_macro_preview(190, 104)
+	_preview_world.configure_world({"seed": seed, "generation_version": BuildInfo.GENERATION_VERSION}, 1)
+	var page: Dictionary = _preview_world.get_macro_preview(384, 216)
 	var image := Image.create_from_data(int(page.width), int(page.height), false, Image.FORMAT_RGBA8, page.pixels)
 	_preview.texture = ImageTexture.create_from_image(image)
 	var identity: Dictionary = _preview_world.get_world_identity()
@@ -198,7 +221,34 @@ func _refresh_preview() -> void:
 		"Physical character · Local discovery and building",
 		"Full sandbox access · Everything unlocked",
 	][selected_preset]
-	_identity_label.text = "Seed  %d\nWorld signature  %s\n\n%s\n%s" % [seed, str(identity.generator_settings_hash), str(axes.display_name), mode_detail]
+	_identity_label.text = "Seed %d  ·  %s\n%s\n%s" % [seed, str(axes.display_name), _describe_world(), mode_detail]
+
+
+func _describe_world() -> String:
+	# The preview describes the surface a player can see from spawn. Caves, ore and
+	# groundwater stay undiscovered on purpose.
+	var summary: Dictionary = _preview_world.get_world_preview_summary()
+	if not bool(summary.get("supported", false)):
+		var macro: Dictionary = _preview_world.get_macro_sample(Vector2i.ZERO)
+		var legacy := ["Slate highlands", "Amethyst faultland", "Verdant basin", "Ochre shelves", "Blue granite range"]
+		return legacy[int(macro.get("geology_province", 0)) % legacy.size()]
+	var parts: Array[String] = [str(summary.biome), str(summary.terrain)]
+	if bool(summary.get("surface_water", false)):
+		parts.append("Surface water")
+	return "  ·  ".join(parts) + "\nBedrock: " + str(summary.province)
+
+
+func layout_metrics() -> Dictionary:
+	return {
+		"viewport": Rect2(Vector2.ZERO, size),
+		"root": _root_column.get_global_rect(),
+		"modes": _mode_row.get_global_rect(),
+		"preview": _preview_frame.get_global_rect(),
+		"settings": _settings_panel.get_global_rect(),
+		"create": _start_button.get_global_rect(),
+		"scroll_containers": get_children().filter(func(node: Node) -> bool: return node is ScrollContainer).size(),
+		"mode_cards": _cards.map(func(card: Button) -> Rect2: return card.get_global_rect()),
+	}
 
 
 func set_saved_worlds(worlds: Array[Dictionary]) -> void:
@@ -210,6 +260,10 @@ func set_saved_worlds(worlds: Array[Dictionary]) -> void:
 		var state := "RECOVERY AVAILABLE" if bool(metadata.get("recoverable", false)) else "CORRUPT" if not bool(metadata.get("primary_valid", true)) else "READY"
 		_save_selector.add_item("%s  ·  %s  ·  %s" % [str(metadata.get("world_name", "World")), str(metadata.get("timestamp_utc", "")), state])
 	var has_saves := _saved_worlds.any(func(metadata: Dictionary) -> bool: return bool(metadata.get("primary_valid", true)))
+	var show_saved := not _saved_worlds.is_empty()
+	if _existing_label != null: _existing_label.visible = show_saved
+	if _session_row != null: _session_row.visible = show_saved
+	if _save_details != null: _save_details.visible = show_saved
 	if _continue_button != null: _continue_button.disabled = not has_saves
 	if _continue_button != null:
 		HelpCatalog.attach(_continue_button, {"title":"Continue latest world", "description":"Loads the newest valid saved world.", "disabled_reason":"No valid saved world exists yet." if not has_saves else ""})
@@ -237,7 +291,7 @@ func _recover_selected() -> void:
 
 func _update_save_details(index: int) -> void:
 	if _save_details == null or _saved_worlds.is_empty():
-		if _save_details != null: _save_details.text = "No saved worlds yet. Create a world below; KoalaSand will save it from the pause menu and through autosave."
+		if _save_details != null: _save_details.text = ""
 		if _recover_button != null: _recover_button.visible = false
 		return
 	var metadata: Dictionary = _saved_worlds[clampi(index, 0, _saved_worlds.size() - 1)]

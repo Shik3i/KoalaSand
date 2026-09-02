@@ -7,6 +7,7 @@ extends Node2D
 var _world: Variant
 var show_chunk_debug: bool = false
 var show_geology_heatmap: bool = false
+var worldgen_debug_layers: Dictionary = {}
 var _brush_cell := Vector2i.ZERO
 var _brush_radius: int = 1
 var _brush_color := Color(0.96, 0.82, 0.48, 0.75)
@@ -60,6 +61,12 @@ func set_chunk_debug(visible: bool) -> void:
 
 func set_geology_heatmap(visible: bool) -> void:
 	show_geology_heatmap = visible
+	queue_redraw()
+
+func set_worldgen_debug_layers(layers: Array[String]) -> void:
+	worldgen_debug_layers.clear()
+	for layer in layers:
+		worldgen_debug_layers[layer] = true
 	queue_redraw()
 
 func set_info_mode(enabled: bool, visible_chunks: Rect2i) -> void:
@@ -138,11 +145,41 @@ func _draw() -> void:
 						color = Color(1.0, 0.72, 0.12, 0.18 + intensity * 0.52)
 					draw_rect(Rect2(Vector2(cell - Vector2i(4, 4)) * cell_pixel_size, Vector2.ONE * 8.0 * cell_pixel_size), color, true)
 
-	var beacon_position := (Vector2(light_cell) + Vector2(0.5, 0.5)) * cell_pixel_size
-	draw_circle(beacon_position, 5.0, Color(0.25, 0.12, 0.04, 0.9))
-	draw_circle(beacon_position, 2.5, Color(1.0, 0.66, 0.22, 1.0))
-	draw_line(beacon_position + Vector2(-7, 0), beacon_position + Vector2(7, 0), Color(0.86, 0.4, 0.12, 0.7), 1.0)
-	draw_line(beacon_position + Vector2(0, -7), beacon_position + Vector2(0, 7), Color(0.86, 0.4, 0.12, 0.7), 1.0)
+	if not worldgen_debug_layers.is_empty() and not _world is CellWorld:
+		var coordinates: Array = _world.get_chunk_coordinates()
+		if not coordinates.is_empty():
+			var minimum := Vector2i(999999, 999999)
+			var maximum := Vector2i(-999999, -999999)
+			for coordinate: Vector2i in coordinates:
+				minimum.x = mini(minimum.x, coordinate.x); minimum.y = mini(minimum.y, coordinate.y)
+				maximum.x = maxi(maximum.x, coordinate.x); maximum.y = maxi(maximum.y, coordinate.y)
+				if worldgen_debug_layers.has("macro_regions") and (posmod(coordinate.x, 8) == 0 or posmod(coordinate.y, 8) == 0):
+					draw_rect(Rect2(Vector2(coordinate * 64) * cell_pixel_size, Vector2.ONE * 64.0 * cell_pixel_size), Color(0.92, 0.58, 0.18, 0.48), false, 1.5)
+			var area := Rect2i(minimum * 64, (maximum - minimum + Vector2i.ONE) * 64)
+			var sample: Dictionary = _world.get_worldgen_debug_sample(area, 12)
+			var records: PackedInt32Array = sample.get("records", PackedInt32Array())
+			for index in range(0, records.size(), int(sample.get("record_stride", 8))):
+				var cell := Vector2i(records[index], records[index + 1])
+				var cave := int(records[index + 3])
+				var aquifer := bool(records[index + 4])
+				var province := int(records[index + 7]) % 5
+				var color := Color.TRANSPARENT
+				if worldgen_debug_layers.has("aquifers") and aquifer: color = Color(0.10, 0.72, 0.92, 0.42)
+				elif worldgen_debug_layers.has("cave_archetypes") and cave > 0: color = [Color.TRANSPARENT, Color(0.72,0.36,0.85,0.36), Color(0.26,0.82,0.64,0.38), Color(0.95,0.61,0.24,0.42), Color(0.95,0.31,0.27,0.44), Color(0.12,0.64,0.86,0.40)][clampi(cave, 0, 5)]
+				elif worldgen_debug_layers.has("geology"):
+					color = [Color(0.48,0.58,0.63,0.22), Color(0.61,0.43,0.68,0.22), Color(0.36,0.64,0.49,0.22), Color(0.72,0.57,0.33,0.22), Color(0.36,0.47,0.72,0.22)][province]
+				if color.a > 0.0: draw_rect(Rect2(Vector2(cell - Vector2i(6, 6)) * cell_pixel_size, Vector2.ONE * 12.0 * cell_pixel_size), color, true)
+			if worldgen_debug_layers.has("start_constraints"):
+				draw_rect(Rect2(Vector2(-176, -96) * cell_pixel_size, Vector2(352, 340) * cell_pixel_size), Color(0.96, 0.78, 0.26, 0.72), false, 2.0)
+
+	# Developer reference marker at a fixed world cell. It is not player-facing content and
+	# only appears alongside the other chunk-debug overlays.
+	if show_chunk_debug:
+		var beacon_position := (Vector2(light_cell) + Vector2(0.5, 0.5)) * cell_pixel_size
+		draw_circle(beacon_position, 5.0, Color(0.25, 0.12, 0.04, 0.9))
+		draw_circle(beacon_position, 2.5, Color(1.0, 0.66, 0.22, 1.0))
+		draw_line(beacon_position + Vector2(-7, 0), beacon_position + Vector2(7, 0), Color(0.86, 0.4, 0.12, 0.7), 1.0)
+		draw_line(beacon_position + Vector2(0, -7), beacon_position + Vector2(0, 7), Color(0.86, 0.4, 0.12, 0.7), 1.0)
 
 	if _show_brush_preview:
 		var center := (Vector2(_brush_cell) + Vector2(0.5, 0.5)) * cell_pixel_size

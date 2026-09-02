@@ -99,6 +99,8 @@ public:
     Dictionary validate_world_seeds(int64_t first_seed, int32_t count) const;
     Dictionary get_worldgen_pass_hashes(Rect2i chunk_area) const;
     Dictionary get_worldgen_debug_sample(Rect2i cell_area, int32_t stride = 8) const;
+    Dictionary get_generation_stability_report(Rect2i chunk_area) const;
+    Dictionary get_worldgen_quality_report(Rect2i chunk_area) const;
     Vector2i get_character_spawn() const;
     Dictionary query_character_collision(Rect2i body) const;
     Dictionary character_dig_cell(Vector2i world_cell);
@@ -113,6 +115,22 @@ public:
     bool deserialize_visibility_state(Dictionary state);
     String visibility_state_hash(int64_t owner_id) const;
     int32_t geology_profile_id_at(Vector2i world_cell) const;
+    Dictionary get_worldgen_v5_architecture() const;
+    Dictionary get_worldgen_v5_profiles() const;
+    Dictionary get_worldgen_v5_columns(int32_t first_x, int32_t count, int32_t stride) const;
+    Dictionary get_worldgen_v5_cell(Vector2i world_cell) const;
+    // Tooling only. Temporarily rebinds the world seed, so it must not run while chunk
+    // generation is in flight; the fixtures call it on a freshly configured world.
+    Dictionary get_worldgen_v5_statistics(int64_t first_seed, int32_t count);
+    Dictionary get_worldgen_v5_start_report() const;
+    // Player-facing seed character for the New World preview. Surface and geology only:
+    // caves, ore and aquifers stay undiscovered.
+    Dictionary get_world_preview_summary() const;
+    Dictionary get_worldgen_debug_chunk_view(Vector2i chunk_coordinate, Vector2i world_cell) const;
+    Dictionary get_cave_topology_report(Rect2i chunk_area) const;
+    Dictionary get_worldgen_debug_field(Rect2i cell_area, int32_t field_id, int32_t stride) const;
+    Array get_structure_candidates(Rect2i cell_area, int32_t structure_type) const;
+    Array get_natural_scene_candidates(Rect2i cell_area) const;
     Dictionary get_geology_profile(int32_t profile_id) const;
     Dictionary get_geology_profile_at(Vector2i world_cell) const;
     String get_chunk_content_hash(Vector2i coordinate) const;
@@ -784,6 +802,9 @@ private:
         std::array<uint16_t, CELLS_PER_CHUNK> mineral_signature{};
         std::array<uint8_t, CELLS_PER_CHUNK> structure{};
         std::unique_ptr<std::array<uint8_t, CELLS_PER_CHUNK>> organic_moisture;
+        // Optional generated 0..255 material amount plane. Present only when the generator
+        // emits a partially filled cell (analytic waterlines that fall between rows).
+        std::unique_ptr<std::array<uint8_t, CELLS_PER_CHUNK>> material_amount;
         int64_t generation_usec = 0;
     };
 
@@ -1359,10 +1380,217 @@ private:
     void generation_worker_loop();
     std::unique_ptr<GeneratedChunk> generate_chunk_data(Vector2i coordinate) const;
     std::unique_ptr<GeneratedChunk> generate_chunk_data_v2(Vector2i coordinate) const;
+    std::unique_ptr<GeneratedChunk> generate_chunk_data_v3(Vector2i coordinate) const;
+    std::unique_ptr<GeneratedChunk> generate_chunk_data_v4(Vector2i coordinate) const;
     MacroSample macro_sample_for(int64_t seed, Vector2i macro_coordinate) const;
     int32_t surface_height_at_v2(int32_t world_x) const;
+    int32_t surface_height_at_v3(int32_t world_x) const;
     int32_t cave_type_at_v2(Vector2i world_cell, int32_t surface_height) const;
+    int32_t cave_type_at_v3(Vector2i world_cell, int32_t surface_height) const;
     bool aquifer_at_v2(Vector2i world_cell, int32_t surface_height, const MacroSample &macro) const;
+    bool aquifer_at_v3(Vector2i world_cell, int32_t surface_height) const;
+    bool surface_lake_at_v3(Vector2i world_cell, int32_t surface_height) const;
+    bool coal_at_v3(Vector2i world_cell, int32_t surface_height) const;
+    int32_t surface_height_at_v4(int32_t world_x) const;
+    int32_t cave_type_at_v4(Vector2i world_cell, int32_t surface_height) const;
+    bool aquifer_at_v4(Vector2i world_cell, int32_t surface_height) const;
+    bool surface_lake_at_v4(Vector2i world_cell, int32_t surface_height) const;
+    bool coal_at_v4(Vector2i world_cell, int32_t surface_height) const;
+    int32_t sediment_depth_at_v4(int32_t world_x, int32_t surface_height) const;
+    int32_t geology_province_at_v4(Vector2i world_cell) const;
+
+    // ---- V5 deterministic infinite-world generator -------------------------------------------
+    // Chunks are simulation units only. Every V5 field and feature is addressed in world
+    // coordinates, so a chunk asks which already-defined features intersect it rather than
+    // defining any geology of its own.
+    static constexpr int32_t V5_PAD = 3;
+    static constexpr int32_t V5_PADDED = CHUNK_SIZE + V5_PAD * 2;
+    static constexpr int32_t V5_PADDED_CELLS = V5_PADDED * V5_PADDED;
+    static constexpr int32_t V5_BEDS_STORED = 10;
+    static constexpr int32_t V5_TABLE_REGIONS = 6;
+
+    // Terrain character weights, solved once per column and shared by the surface operator,
+    // the climate fields and the biome selector. Deriving ruggedness from the same field the
+    // landform operators use is what lets a rugged biome actually occur on rugged ground.
+    struct V5Terrain {
+        double continental = 0.0;
+        double uplift = 0.0;
+        double roughness = 0.5;
+        double highland = 0.0;
+        double basin = 0.0;
+        double terrace = 0.0;
+        double calm = 0.0;
+    };
+
+    struct V5Climate {
+        double temperature = 0.0;
+        double moisture = 0.0;
+        double ruggedness = 0.0;
+        double basinness = 0.0;
+        int32_t biome = 0;
+        double biome_margin = 1.0;
+    };
+
+    struct V5Column {
+        int32_t surface = 0;
+        int32_t soil = 0;           // topsoil thickness below the surface
+        int32_t sediment = 0;       // cumulative depth of packed sediment
+        int32_t weathered = 0;      // cumulative depth of the weathering front
+        int32_t sand_depth = 0;     // loose surface Sand thickness, 0 = none
+        int32_t slope = 0;
+        int32_t curvature = 0;
+        int32_t biome = 0;
+        int32_t province = 0;
+        int32_t lake_level = 0;     // world y of the lake waterline row
+        int32_t lake_mass = 0;      // 0 = no lake, else 1..255 mass of the waterline row
+        int32_t lake_guard = 0;     // waterline of a lake basin this column sits inside, 0 = none
+        int32_t bed_first = 0;      // global bedding index of bed_y[0]
+        int32_t bed_stored = 0;
+        int32_t bed_y[V5_BEDS_STORED]{};   // absolute world y of each bedding boundary
+    };
+
+    // Cave systems are expanded into varying-radius capsules and angularly perturbed blobs.
+    struct V5Capsule {
+        double x0 = 0.0, y0 = 0.0, x1 = 0.0, y1 = 0.0;
+        double r0 = 0.0, r1 = 0.0;
+        int32_t system = 0;
+        uint8_t archetype = 0;
+    };
+
+    struct V5Blob {
+        double cx = 0.0, cy = 0.0, rx = 0.0, ry = 0.0;
+        double amp_a = 0.0, cos_a = 1.0, sin_a = 0.0;
+        double amp_b = 0.0, cos_b = 1.0, sin_b = 0.0;
+        double amp_c = 0.0, cos_c = 1.0, sin_c = 0.0;
+        int32_t system = 0;
+        uint8_t archetype = 0;
+    };
+
+    // A jigsaw room: an axis-aligned hollow with masonry walls and open connection ports.
+    // Assembly is a pure function of the candidate region, so every chunk that can see a
+    // facility builds the identical layout without any shared state.
+    struct V5Room {
+        int32_t x0 = 0, y0 = 0, x1 = 0, y1 = 0;   // inclusive outer bounds, walls included
+        uint8_t ports = 0;                        // 1 left, 2 right, 4 top, 8 bottom
+        uint8_t piece = 0;
+    };
+
+    struct V5Vein {
+        double x0 = 0.0, y0 = 0.0, x1 = 0.0, y1 = 0.0;
+        double r0 = 0.0, r1 = 0.0;
+        uint8_t kind = 0;
+    };
+
+    struct V5Context {
+        Vector2i origin;
+        Vector2i padded_origin;
+        std::vector<V5Column> columns;
+        std::vector<uint8_t> carve;          // 0 = solid, else archetype id
+        std::vector<uint16_t> carve_system;
+        std::vector<V5Capsule> capsules;
+        std::vector<V5Blob> blobs;
+        std::vector<V5Vein> veins;
+        std::vector<V5Room> rooms;
+        std::vector<uint8_t> wall;               // masonry keeps its cell even where a cave crosses
+        int32_t bed_cumulative[64]{};
+        int32_t table_region_first = 0;
+        int32_t table_mu[V5_TABLE_REGIONS]{};
+        int32_t lake_region_first = 0;
+        int32_t lake_waterline[3]{};
+        int32_t lake_mass[3]{};
+        int32_t lake_left[3]{};
+        int32_t lake_right[3]{};
+        int32_t systems = 0;
+        int32_t clamped_systems = 0;
+        int32_t surface_min = 0;
+        int32_t surface_max = 0;
+    };
+
+public:
+    struct V5BiomeProfile {
+        const char *name;
+        double temperature, moisture, ruggedness, basinness;
+        double weight_temperature, weight_moisture, weight_ruggedness, weight_basinness;
+        int32_t soil_min, soil_max;
+        int32_t sediment_min, sediment_max;
+        double surface_sand;
+        double lake_bias;
+        double vegetation;
+        double cave_entrance_bias;
+    };
+
+    struct V5ProvinceProfile {
+        const char *name;
+        double weight;
+        double cave_density;
+        double horizontal_bias;
+        double tunnel_weight, chamber_weight, fissure_weight, cavern_weight;
+        double permeability;
+        double coal_richness, iron_richness, gold_richness;
+        int32_t bed_period;
+        double bed_thickness;
+        uint8_t rock_sequence[8];
+    };
+
+    struct V5RockProfile {
+        const char *name;
+        int32_t silica, iron, heavy, gold;
+    };
+
+private:
+
+    static const V5BiomeProfile &v5_biome_profile(int32_t index);
+    static const V5ProvinceProfile &v5_province_profile(int32_t index);
+    static const V5RockProfile &v5_rock_profile(int32_t index);
+    // Maps a stored 16-bit geology profile to a rock colour. Composition *is* the visual, so
+    // a player reading a section is reading real material data.
+    static void v5_profile_colour(uint16_t profile, float *rgb);
+    // Single source of truth for what a V5 geology profile is made of. Both the conserved
+    // mass path and the reported composition read this, so they cannot drift apart.
+    static void v5_profile_fractions(uint16_t profile, uint16_t signature, double *out_six);
+    static int32_t v5_biome_count();
+    static int32_t v5_province_count();
+    static int32_t v5_rock_count();
+
+    double v5_value1(uint32_t domain, int32_t x, int32_t scale, uint32_t salt) const;
+    double v5_fbm1(uint32_t domain, int32_t x, int32_t scale, int32_t octaves, uint32_t salt) const;
+    double v5_ridged1(uint32_t domain, int32_t x, int32_t scale, int32_t octaves, uint32_t salt) const;
+    double v5_value2(uint32_t domain, int32_t x, int32_t y, int32_t scale_x, int32_t scale_y, uint32_t salt) const;
+    double v5_fbm2(uint32_t domain, int32_t x, int32_t y, int32_t scale, int32_t octaves, uint32_t salt) const;
+
+    V5Terrain v5_terrain_fields(int32_t world_x) const;
+    int32_t v5_surface_from(const V5Terrain &terrain, int32_t world_x) const;
+    int32_t surface_height_at_v5(int32_t world_x) const;
+    V5Climate climate_at_v5(int32_t world_x) const;
+    int32_t geology_province_at_v5(int32_t world_x, int32_t world_y) const;
+    int32_t v5_cave_roof(const V5Column &column) const;
+    void v5_build_bed_cumulative(V5Context &context) const;
+    void v5_fill_column(V5Context &context, V5Column &column, int32_t world_x, int32_t probe_y) const;
+    void v5_prepare_lakes(V5Context &context) const;
+    int32_t v5_bed_rock(int32_t province_index, int32_t bed_index) const;
+    int32_t v5_bed_rock_at(int32_t province_index, int32_t bed_index, int32_t world_y) const;
+    int32_t v5_deep_facies(int32_t rock, int32_t world_y) const;
+    uint16_t v5_stone_profile(int32_t rock, int32_t world_x, int32_t world_y, int32_t depth, int32_t province) const;
+    int32_t v5_table_region(int32_t world_x, int32_t world_y, int32_t &local) const;
+    int32_t v5_region_table_mu(int32_t region) const;
+    int32_t v5_context_table_mu(const V5Context &context, int32_t region) const;
+    bool v5_aquifer_barrier(const V5Context &context, int32_t world_x, int32_t world_y) const;
+    void v5_prepare_tables(V5Context &context) const;
+    void v5_gather_features(V5Context &context) const;
+    void v5_gather_cave_layer(V5Context &context, uint32_t domain, int32_t grid_x, int32_t grid_y,
+                              int32_t reach, bool allow_cavern) const;
+    void v5_gather_ore(V5Context &context) const;
+    void v5_gather_scenes(V5Context &context) const;
+    void v5_gather_structures(V5Context &context) const;
+    void v5_gather_surface_ruins(V5Context &context) const;
+    int32_t v5_assemble_jigsaw(int32_t seed_x, int32_t seed_y, int32_t anchor_x, int32_t anchor_y,
+                               V5Room *out_rooms, int32_t capacity) const;
+    void v5_rasterize_caves(V5Context &context) const;
+    // Debug only: rebuilds the padded carve buffer for one chunk so an inspection render
+    // can colour by cave archetype without the generator storing archetype per cell.
+    void v5_debug_carve_chunk(Vector2i coordinate, V5Context &context) const;
+    void v5_apply_vegetation(GeneratedChunk &generated, const V5Context &context) const;
+    std::unique_ptr<GeneratedChunk> generate_chunk_data_v5(Vector2i coordinate) const;
     bool thermal_at_v2(Vector2i world_cell, int32_t surface_height, const MacroSample &macro) const;
     uint64_t visibility_key(int64_t owner_id, Vector2i chunk_coordinate) const;
     VisibilityChunk *visibility_chunk_for(int64_t owner_id, Vector2i chunk_coordinate, bool create);

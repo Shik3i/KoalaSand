@@ -82,3 +82,10 @@ Generated base materials retain deterministic ambient temperature and implicit f
 ## Phase 11 V2
 
 Version `1` remains regression-locked. New worlds use `generation_version = 2` and stable `WorldIdentity`. V2 adds native macro fields, broad surface interpolation, explicit depth regions, five cave grammars, coherent physical aquifers, depth/regional geology, deep thermal fields, deterministic spawn corrections, and versioned authored FeatureTemplates. Streaming demand is expressed by `InterestRegion`; V2 Water does not recursively expand generation outside interest bounds. Full contract and validation: `WORLD_GENERATION_V2.md` and `WORLDGEN_VALIDATION.md`.
+
+New worlds now use `generation_version = 5`. V5 keeps every V4 streaming and stability
+guarantee and replaces the content model: per-subsystem seed domains, regionally
+differentiated terrain, climate-space biomes, warped-Voronoi geological provinces with real
+bedding planes, cave *systems* rasterised from world-space descriptors, local water tables
+with impermeable barriers, and fractional liquid levels. V1-V4 saves keep their own
+generator. Full contract, statistics and known weaknesses: `WORLD_GENERATION_V5.md`.

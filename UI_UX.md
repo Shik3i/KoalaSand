@@ -71,6 +71,19 @@ ESC resolves placement, top modal/map/research, then pause. Onboarding is per-pr
 
 `KoalaSandTheme` is now the single player-facing token source for surfaces, semantic state, spacing, radii, icon sizes, type hierarchy and `80/120/180 ms` motion. Main Menu/New Game, HUD, Catalog, Codex, Research, Inspector, Map, Blueprints, Experiments and Pause/Settings share the industrial slate/brass language. Character telemetry no longer exposes cells, solver range or FOV timing; Statistics resolves material names and player-scale totals rather than raw material IDs and native timing internals. The exact token contract is in `DESIGN_SYSTEM.md`.
 
+## World generation V5 presentation
+
+The New World preview is a landscape postcard built from V5 macro fields: sky, distant
+parallax ridge, surface relief, canopy where the biome supports vegetation, surface water and
+the shallow geological column. The accompanying text names the spawn biome, terrain character,
+surface water and bedrock province through `get_world_preview_summary()`; caves, ore and
+groundwater stay undiscovered. The Factory and Creative overview map reuses the same postcard
+and draws the camera region and world centre on it.
+
+Rock colour is read directly from each cell's stored geology profile, so a section a player
+reads is the material data. Laminae and mottling give a bed mid-frequency grain so a formation
+covering a whole screen does not read as flat paint.
+
 ## Phase 13.9B responsive layout contract
 
 The permanent HUD now has two safe regions: one grouped top rail and one coherent bottom dock. Workspace panels occupy the rectangle between them and replace one another rather than stacking. The bottom dock owns a contextual tool strip, primary Quickbar, subordinate pager and secondary Catalog/Blueprint access; constrained 150% layouts wrap groups inside that single dock.
