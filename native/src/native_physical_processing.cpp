@@ -175,7 +175,9 @@ void NativeSandWorld::process_physical_fields() {
         const auto found = physical_processors_.find(id);
         if (found == physical_processors_.end()) continue;
         const PhysicalProcessor &magnet = found->second;
-        MachineEntity &entity = machine_entities_.at(id);
+        const auto entity_found = machine_entities_.find(id);
+        if (entity_found == machine_entities_.end()) continue;
+        MachineEntity &entity = entity_found->second;
         const int32_t previous_state = entity.state;
         if (entity.control_connected && !entity.control_enabled) {
             entity.state = 10;
@@ -232,7 +234,9 @@ void NativeSandWorld::process_vibrating_screens() {
         const auto found = physical_processors_.find(id);
         if (found == physical_processors_.end()) continue;
         const PhysicalProcessor &screen = found->second;
-        MachineEntity &entity = machine_entities_.at(id);
+        const auto entity_found = machine_entities_.find(id);
+        if (entity_found == machine_entities_.end()) continue;
+        MachineEntity &entity = entity_found->second;
         const int32_t previous_state = entity.state;
         if (entity.control_connected && !entity.control_enabled) {
             entity.state = 10;
@@ -331,7 +335,11 @@ void NativeSandWorld::process_physical_heaters() {
         const auto found = physical_processors_.find(id);
         if (found == physical_processors_.end()) continue;
         const PhysicalProcessor &heater = found->second;
-        MachineEntity &entity = machine_entities_.at(id);
+        // A processor id without a machine behind it means the two registries disagree.
+        // Skipping the entity keeps the tick honest; aborting the process does not.
+        const auto entity_found = machine_entities_.find(id);
+        if (entity_found == machine_entities_.end()) continue;
+        MachineEntity &entity = entity_found->second;
         const int32_t previous_state = entity.state;
         if (entity.control_connected && !entity.control_enabled) {
             entity.state = 10;
@@ -411,7 +419,9 @@ void NativeSandWorld::process_wet_sluices() {
         const auto found = physical_processors_.find(id);
         if (found == physical_processors_.end() || found->second.type_id != STRUCTURE_WASH_SLUICE) continue;
         const PhysicalProcessor &sluice = found->second;
-        MachineEntity &entity = machine_entities_.at(id);
+        const auto entity_found = machine_entities_.find(id);
+        if (entity_found == machine_entities_.end()) continue;
+        MachineEntity &entity = entity_found->second;
         const int32_t previous_state = entity.state;
         const int32_t direction = sluice.transport_direction;
         const int32_t start_x = direction > 0 ? sluice.origin.x + 15 : sluice.origin.x + 2;

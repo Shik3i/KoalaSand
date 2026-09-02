@@ -43,6 +43,10 @@ constexpr int32_t RAW_FOOD_ID = 25;
 constexpr int32_t COOKED_FOOD_ID = 26;
 constexpr int32_t BURNT_FOOD_ID = 27;
 constexpr int32_t MAX_MATERIAL_ID = BURNT_FOOD_ID;
+// A brush stroke is one gesture: wide enough for any editor brush, bounded so that a malformed
+// command cannot ask the simulation to sweep the whole world.
+constexpr int32_t MAX_BRUSH_RADIUS = 64;
+constexpr int64_t MAX_STROKE_CELLS = 4'194'304;
 constexpr int32_t UNGENERATED_ID = -1;
 constexpr uint8_t STRUCTURE_NONE = 0;
 constexpr uint8_t STRUCTURE_CONVEYOR_LEFT = 1;
@@ -242,6 +246,8 @@ void NativeSandWorld::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_provenance", "world_cell"), &NativeSandWorld::get_provenance);
     ClassDB::bind_method(D_METHOD("get_mineral_signature", "world_cell"), &NativeSandWorld::get_mineral_signature);
     ClassDB::bind_method(D_METHOD("harvest_cell", "world_cell"), &NativeSandWorld::harvest_cell);
+    ClassDB::bind_method(D_METHOD("paint_stroke", "from_cell", "to_cell", "radius", "material_id"), &NativeSandWorld::paint_stroke);
+    ClassDB::bind_method(D_METHOD("harvest_stroke", "from_cell", "to_cell", "radius"), &NativeSandWorld::harvest_stroke);
     ClassDB::bind_method(D_METHOD("get_hidden_constituent", "profile_id", "mineral_signature"), &NativeSandWorld::get_hidden_constituent);
     ClassDB::bind_method(D_METHOD("process_material_for_test", "material_id", "profile_id", "mineral_signature", "process_id"), &NativeSandWorld::process_material_for_test);
     ClassDB::bind_method(D_METHOD("fill_rect", "area", "material_id", "spacing"), &NativeSandWorld::fill_rect, DEFVAL(1));
@@ -484,13 +490,19 @@ void NativeSandWorld::_bind_methods() {
     ClassDB::bind_method(D_METHOD("configure_power_benchmark", "scenario", "count"), &NativeSandWorld::configure_power_benchmark);
 }
 
-void NativeSandWorld::reset(int64_t world_seed, int32_t requested_workers) {
-    stop_generation_workers();
-    stop_workers();
+// Everything a world owns, returned to the state a brand new world starts in.
+//
+// Both entry points that begin a world -- reset() and configure_world() -- must forget the
+// previous one completely. They used to clear their own lists, and configure_world() cleared
+// machine_entities_ while leaving physical_processors_, the active magnet/screen/heater/sluice
+// sets, the thermal switch and exchanger cells, and the automation, power, pipe, organic and
+// phase13 registries populated with the previous world's ids. Starting a second world then
+// stepped over a heater id that no longer had a machine behind it and took the process down.
+// One list, called from both, is the only version of this that stays correct as subsystems
+// are added.
+void NativeSandWorld::clear_world_state() {
     chunks_.clear();
-    seed_ = world_seed;
     tick_index_ = 0;
-    configure_workers(requested_workers);
     last_movements_ = 0;
     last_cells_visited_ = 0;
     last_cells_skipped_ = 0;
@@ -507,7 +519,6 @@ void NativeSandWorld::reset(int64_t world_seed, int32_t requested_workers) {
     fluid_render_revision_ = 0;
     thermal_candidate_.reset();
     thermal_candidate_statistics_.clear();
-    world_generation_enabled_ = false;
     generation_queue_.clear();
     generating_keys_.clear();
     queued_keys_.clear();
@@ -571,6 +582,15 @@ void NativeSandWorld::reset(int64_t world_seed, int32_t requested_workers) {
     reset_power();
     reset_organic_physics();
     reset_phase13();
+}
+
+void NativeSandWorld::reset(int64_t world_seed, int32_t requested_workers) {
+    stop_generation_workers();
+    stop_workers();
+    seed_ = world_seed;
+    configure_workers(requested_workers);
+    clear_world_state();
+    world_generation_enabled_ = false;
 }
 
 int32_t NativeSandWorld::floor_div(int32_t value, int32_t divisor) {
@@ -918,6 +938,103 @@ int64_t NativeSandWorld::get_total_water_mass() const {
     return total;
 }
 
+// The cells one brush stroke covers.
+//
+// The editor stamps a disc at every interpolated point between the previous pointer cell and
+// the current one. That set -- not an idealised capsule -- is what the brush has always
+// painted, and a performance fix is not allowed to change how the brush feels, so the same
+// set is built here. The interpolation is done in exact integer arithmetic rather than with
+// lerp and round, because a stroke edits the world and two machines must agree on it.
+//
+// The mask deduplicates: consecutive discs overlap heavily, and every cell should be visited
+// once, in a fixed row-major order, so the edit does not depend on the path that produced it.
+bool NativeSandWorld::stroke_mask(Vector2i from_cell, Vector2i to_cell, int32_t radius,
+                                  Rect2i &area, std::vector<uint8_t> &mask) {
+    if (radius < 0 || radius > MAX_BRUSH_RADIUS) return false;
+    const int64_t left = std::min(from_cell.x, to_cell.x) - static_cast<int64_t>(radius);
+    const int64_t right = std::max(from_cell.x, to_cell.x) + static_cast<int64_t>(radius);
+    const int64_t top = std::min(from_cell.y, to_cell.y) - static_cast<int64_t>(radius);
+    const int64_t bottom = std::max(from_cell.y, to_cell.y) + static_cast<int64_t>(radius);
+    if (left < std::numeric_limits<int32_t>::min() + 2 || right > std::numeric_limits<int32_t>::max() - 2 ||
+        top < std::numeric_limits<int32_t>::min() + 2 || bottom > std::numeric_limits<int32_t>::max() - 2) return false;
+    const int64_t width = right - left + 1;
+    const int64_t height = bottom - top + 1;
+    if (width * height > MAX_STROKE_CELLS) return false;
+
+    area = Rect2i(static_cast<int32_t>(left), static_cast<int32_t>(top),
+                  static_cast<int32_t>(width), static_cast<int32_t>(height));
+    mask.assign(static_cast<size_t>(width * height), 0);
+
+    const int32_t steps = std::max(std::abs(to_cell.x - from_cell.x), std::abs(to_cell.y - from_cell.y));
+    const int64_t radius_squared = static_cast<int64_t>(radius) * radius;
+    for (int32_t step = 0; step <= steps; ++step) {
+        const Vector2i point{
+            from_cell.x + rounded_fraction(static_cast<int64_t>(to_cell.x) - from_cell.x, step, steps),
+            from_cell.y + rounded_fraction(static_cast<int64_t>(to_cell.y) - from_cell.y, step, steps)};
+        for (int32_t offset_y = -radius; offset_y <= radius; ++offset_y) {
+            for (int32_t offset_x = -radius; offset_x <= radius; ++offset_x) {
+                if (static_cast<int64_t>(offset_x) * offset_x + static_cast<int64_t>(offset_y) * offset_y > radius_squared) continue;
+                const int64_t column = static_cast<int64_t>(point.x) + offset_x - left;
+                const int64_t row = static_cast<int64_t>(point.y) + offset_y - top;
+                if (column < 0 || column >= width || row < 0 || row >= height) continue;
+                mask[static_cast<size_t>(row * width + column)] = 1;
+            }
+        }
+    }
+    return true;
+}
+
+// delta * step / steps, rounded to nearest with ties away from zero, without touching a float.
+int32_t NativeSandWorld::rounded_fraction(int64_t delta, int32_t step, int32_t steps) {
+    if (steps <= 0) return 0;
+    const int64_t numerator = delta * step;
+    const int64_t denominator = steps;
+    const int64_t magnitude = (std::abs(numerator) * 2 + denominator) / (denominator * 2);
+    return static_cast<int32_t>(numerator < 0 ? -magnitude : magnitude);
+}
+
+// One brush stroke, applied once.
+//
+// The editor used to send one command per painted cell. A radius-3 brush dragged across 160
+// cells in a frame is roughly 4,700 commands, each allocating a CommandBatch, deep-copying its
+// payload, reading the whole statistics dictionary and serialising itself into a log -- about
+// five seconds of GDScript for a tenth of a millisecond of actual work. The gesture is one
+// player action, so it travels as one command and is swept here.
+//
+// Cells are written through set_cell, so provenance, activation, belt and machine port wake-ups
+// and automation notifications behave exactly as they do for a single edit. There is no second
+// implementation of what it means to place a cell.
+int64_t NativeSandWorld::paint_stroke(Vector2i from_cell, Vector2i to_cell, int32_t radius, int32_t material_id) {
+    if (material_id < EMPTY_ID || material_id > MAX_MATERIAL_ID) return -1;
+    Rect2i area;
+    std::vector<uint8_t> mask;
+    if (!stroke_mask(from_cell, to_cell, radius, area, mask)) return -1;
+    int64_t written = 0;
+    for (int32_t row = 0; row < area.size.y; ++row) {
+        for (int32_t column = 0; column < area.size.x; ++column) {
+            if (mask[static_cast<size_t>(row) * area.size.x + column] == 0) continue;
+            if (set_cell({area.position.x + column, area.position.y + row}, material_id) == 0) ++written;
+        }
+    }
+    return written;
+}
+
+// The harvest brush, swept the same way and for the same reason.
+int64_t NativeSandWorld::harvest_stroke(Vector2i from_cell, Vector2i to_cell, int32_t radius) {
+    Rect2i area;
+    std::vector<uint8_t> mask;
+    if (!stroke_mask(from_cell, to_cell, radius, area, mask)) return -1;
+    int64_t harvested = 0;
+    for (int32_t row = 0; row < area.size.y; ++row) {
+        for (int32_t column = 0; column < area.size.x; ++column) {
+            if (mask[static_cast<size_t>(row) * area.size.x + column] == 0) continue;
+            const Vector2i cell{area.position.x + column, area.position.y + row};
+            if (get_cell(cell) == COAL_ID && harvest_cell(cell) == 0) ++harvested;
+        }
+    }
+    return harvested;
+}
+
 int32_t NativeSandWorld::harvest_cell(Vector2i world_cell) {
     if (get_cell(world_cell) != COAL_ID) return get_cell(world_cell) == BEDROCK_ID ? 31 : 0;
     return set_cell_with_metadata(world_cell, COAL_CHUNK_ID, 0, 0);
@@ -1240,11 +1357,36 @@ bool NativeSandWorld::displace_water_for_sand(Vector2i destination, MatterJobRes
     return false;
 }
 
+// The exact condition under which activate_reactive_cell() would put a cell in reactive_cells_.
+// Kept next to move_granular_fast so that a change to the insert rule in native_organic_physics
+// is visibly a change to this one too.
+bool NativeSandWorld::reactive_state_possible(int32_t material, int32_t bound_moisture) {
+    if (bound_moisture > 0) return true;
+    return material >= 0 && material < MATERIAL_COUNT && organic_material_definitions()[material].reactive;
+}
+
 bool NativeSandWorld::move_granular_fast(Chunk &source_chunk, int32_t source_index, Vector2i source, Vector2i destination,
                                           MatterJobResult &result, bool collect_changes) {
-    Chunk *destination_chunk = get_chunk(world_to_chunk(destination));
-    if (destination_chunk == nullptr) return false;
-    const int32_t destination_index = local_index(world_to_local(destination));
+    // Resolve the destination without touching the chunk map when it lies inside the chunk we
+    // are already holding. Only cells on a chunk edge fall out of it, so this is the common
+    // case by a wide margin -- and this function is called up to three times for every mobile
+    // cell of every active chunk, which made that hash lookup one of the most executed
+    // instructions in the simulation. The fluid path has always had this fast index; the
+    // granular path went the long way round.
+    const Vector2i chunk_origin = source_chunk.coordinate * CHUNK_SIZE;
+    const int32_t local_x = destination.x - chunk_origin.x;
+    const int32_t local_y = destination.y - chunk_origin.y;
+    Chunk *destination_chunk = nullptr;
+    int32_t destination_index = 0;
+    if (static_cast<uint32_t>(local_x) < static_cast<uint32_t>(CHUNK_SIZE) &&
+        static_cast<uint32_t>(local_y) < static_cast<uint32_t>(CHUNK_SIZE)) {
+        destination_chunk = &source_chunk;
+        destination_index = local_y * CHUNK_SIZE + local_x;
+    } else {
+        destination_chunk = get_chunk(world_to_chunk(destination));
+        if (destination_chunk == nullptr) return false;
+        destination_index = local_index(world_to_local(destination));
+    }
     const uint16_t source_material = source_chunk.material[source_index];
     const int32_t source_amount = material_amount_at(source_chunk, source_index);
     const uint16_t source_phase_energy = source_chunk.phase_energy == nullptr ? 0 : (*source_chunk.phase_energy)[source_index];
@@ -1252,10 +1394,16 @@ bool NativeSandWorld::move_granular_fast(Chunk &source_chunk, int32_t source_ind
     const uint16_t source_reaction_progress = source_chunk.reaction_progress == nullptr ? 0 : (*source_chunk.reaction_progress)[source_index];
     const uint8_t source_reaction_state = source_chunk.reaction_state == nullptr ? 0 : (*source_chunk.reaction_state)[source_index];
     const uint16_t destination_material = destination_chunk->material[destination_index];
+    const uint8_t destination_moisture = destination_chunk->organic_moisture == nullptr
+            ? 0 : (*destination_chunk->organic_moisture)[destination_index];
     if (destination_material == WATER_ID) {
         if (source_material != SAND_ID || !displace_water_for_sand(destination, result, collect_changes)) return false;
     } else if (destination_material != EMPTY_ID) return false;
-    const int32_t structure = get_structure(destination);
+    // The destination chunk is already resolved, and most chunks carry no structure plane at
+    // all, so read it directly instead of going back through get_structure()'s chunk lookup.
+    const int32_t structure = destination_chunk->structures == nullptr
+            ? STRUCTURE_NONE
+            : static_cast<int32_t>((*destination_chunk->structures)[destination_index] & 0x7fu);
     if (structure != STRUCTURE_NONE && !(structure == STRUCTURE_CONTROL_GATE && open_gate_cells_.contains(cell_key(destination)))) {
         if (structure != STRUCTURE_SIEVE || destination.y <= source.y || !is_permeable_screen_cell(destination) ||
             !permeability_allows(fine_screen_permeability_rule(), source_material, source_chunk.provenance[source_index], source_chunk.mineral_signature[source_index])) return false;
@@ -1288,11 +1436,23 @@ bool NativeSandWorld::move_granular_fast(Chunk &source_chunk, int32_t source_ind
     if (source_chunk.organic_moisture != nullptr) (*source_chunk.organic_moisture)[source_index] = 0;
     if (source_chunk.reaction_progress != nullptr) (*source_chunk.reaction_progress)[source_index] = 0;
     if (source_chunk.reaction_state != nullptr) (*source_chunk.reaction_state)[source_index] = 0;
-    // reactive_cells_ is a shared unordered_set. Granular jobs run in parallel,
-    // so defer both cells to the serial barrier commit instead of mutating the
-    // container from worker threads.
-    result.reactive_cells_changed.push_back(source);
-    result.reactive_cells_changed.push_back(destination);
+    // reactive_cells_ is a shared unordered_set. Granular jobs run in parallel, so defer both
+    // cells to the serial barrier commit instead of mutating the container from worker threads.
+    //
+    // Only cells whose reactive status can actually change are worth deferring. A cell enters
+    // reactive_cells_ only if its material is reactive or it carries bound water, so when
+    // neither the material leaving nor the material arriving qualifies, the erase finds
+    // nothing and the re-activation inserts nothing: the whole notification is a provable
+    // no-op. It was not free, though. Every notification cost two hash-set erases and two
+    // chunk-map lookups on the serial barrier, and a wall of falling Sand moves a cell per
+    // cell per tick -- a million moves meant four million serial map operations that no
+    // subsystem ever read. That is the whole of why a million active Sand cells cost roughly
+    // five times what a million active Water cells cost, for the same number of cells visited.
+    if (reactive_state_possible(source_material, source_moisture) ||
+        reactive_state_possible(destination_material, destination_moisture)) {
+        result.reactive_cells_changed.push_back(source);
+        result.reactive_cells_changed.push_back(destination);
+    }
     ++source_chunk.revision;
     ++destination_chunk->revision;
     source_chunk.moved_this_tick = destination_chunk->moved_this_tick = true;
@@ -1896,13 +2056,7 @@ void NativeSandWorld::configure_world(Dictionary settings, int32_t generation_wo
     const int32_t requested_simulation_workers = simulation_executor_ == nullptr ? std::clamp(hardware - 1, 1, 8) : worker_count_;
     stop_workers();
     configure_workers(requested_simulation_workers);
-    chunks_.clear();
-    generation_queue_.clear();
-    generating_keys_.clear();
-    queued_keys_.clear();
-    completed_keys_.clear();
-    completed_generation_.clear();
-    evicted_chunks_.clear();
+    clear_world_state();
 
     if (settings.has("seed")) seed_ = static_cast<int64_t>(settings["seed"]);
     if (settings.has("width")) world_settings_.width = static_cast<int32_t>(settings["width"]);
@@ -1928,32 +2082,7 @@ void NativeSandWorld::configure_world(Dictionary settings, int32_t generation_wo
     world_settings_.geology_scale = std::clamp(world_settings_.geology_scale, 64, 4096);
     world_settings_.generation_version = std::clamp(world_settings_.generation_version, 1, 5);
 
-    tick_index_ = 0;
-    last_chunks_published_ = 0;
-    last_publish_usec_ = 0;
-    total_generation_usec_ = 0;
-    worst_generation_usec_ = 0;
-    total_chunks_generated_ = 0;
-    total_chunks_published_ = 0;
-    total_chunks_evicted_ = 0;
-    peak_generation_queue_ = 0;
-    peak_allocated_chunks_ = 0;
-    clear_visibility();
     world_generation_enabled_ = true;
-    next_machine_id_ = 1;
-    structure_revision_ = 0;
-    machine_entities_.clear();
-    active_belts_.clear();
-    active_machines_.clear();
-    machine_port_watchers_.clear();
-    dirty_structure_chunks_.clear();
-    structures_allocated_ = 0;
-    belts_total_ = 0;
-    reset_subsurface_logistics();
-    reset_production_statistics();
-    initialize_progression();
-    last_banks_active_ = last_banks_visited_ = last_bank_accepted_ = last_bank_rejected_ = 0;
-    last_bank_blocked_ = last_bank_usec_ = total_bank_accepted_ = total_bank_rejected_ = 0;
     configure_generation_workers(generation_workers);
 }
 
@@ -4194,17 +4323,25 @@ Dictionary NativeSandWorld::consume_dirty_render_page(Rect2i chunk_area, bool fo
 
     const int32_t width = chunk_area.size.x * CHUNK_SIZE;
     const int32_t height = chunk_area.size.y * CHUNK_SIZE;
-    PackedByteArray pixels;
-    pixels.resize(static_cast<int64_t>(width) * height * 4);
-    uint8_t *destination = pixels.ptrw();
+    const int64_t required_bytes = static_cast<int64_t>(width) * height * 4;
+    // The page is reassembled on every frame the visible world changes. A fresh PackedByteArray
+    // meant allocating and zero-filling three and a half megabytes each time, and then
+    // immediately overwriting nearly all of it with the chunk copies below -- the preparation
+    // cost more than the work it was preparing for. Keep the buffer between calls and zero only
+    // the regions no chunk covers, which is what the fresh allocation was really providing.
+    if (render_page_pixels_.size() != required_bytes) render_page_pixels_.resize(required_bytes);
+    uint8_t *destination = render_page_pixels_.ptrw();
     for (int32_t chunk_y = 0; chunk_y < chunk_area.size.y; ++chunk_y) {
         for (int32_t chunk_x = 0; chunk_x < chunk_area.size.x; ++chunk_x) {
             const Chunk *chunk = get_chunk(chunk_area.position + Vector2i(chunk_x, chunk_y));
-            if (chunk == nullptr) continue;
             for (int32_t local_y = 0; local_y < CHUNK_SIZE; ++local_y) {
-                const auto source = chunk->rgba.begin() + static_cast<int64_t>(local_y) * CHUNK_SIZE * 4;
                 uint8_t *row = destination +
                         (static_cast<int64_t>(chunk_y * CHUNK_SIZE + local_y) * width + chunk_x * CHUNK_SIZE) * 4;
+                if (chunk == nullptr) {
+                    std::fill_n(row, CHUNK_SIZE * 4, uint8_t{0});
+                    continue;
+                }
+                const auto source = chunk->rgba.begin() + static_cast<int64_t>(local_y) * CHUNK_SIZE * 4;
                 std::copy_n(source, CHUNK_SIZE * 4, row);
             }
         }
@@ -4214,8 +4351,8 @@ Dictionary NativeSandWorld::consume_dirty_render_page(Rect2i chunk_area, bool fo
     result["cell_position"] = chunk_area.position * CHUNK_SIZE;
     result["width"] = width;
     result["height"] = height;
-    result["pixels"] = pixels;
-    result["bytes"] = static_cast<int64_t>(pixels.size());
+    result["pixels"] = render_page_pixels_;
+    result["bytes"] = required_bytes;
     result["dirty_pixels"] = last_dirty_render_pixels_;
     return result;
 }

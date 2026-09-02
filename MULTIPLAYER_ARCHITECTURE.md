@@ -6,7 +6,7 @@ No networking runtime exists in Phase 6.5.
 
 `Create Room` returns a short room code. A friend joins as `PLAYER` or `SPECTATOR` without an account requirement. One peer is the authoritative `SIMULATION HOST`.
 
-The host validates proposed `WorldCommand` messages, assigns canonical tick/order, broadcasts that order, publishes periodic hashes, and supplies localized snapshots or chunk deltas after mismatch. Routine traffic is commands, not millions of sand cells.
+The host validates proposed `WorldCommand` messages, assigns canonical tick/order, broadcasts that order, publishes periodic hashes, and supplies localized snapshots or chunk deltas after mismatch. Routine traffic is commands, not millions of sand cells. That holds for world editing too: a brush gesture travels as one `PAINT_STROKE` with endpoints and radius, and each peer sweeps the same cells from it in integer arithmetic.
 
 ## Service and transport
 

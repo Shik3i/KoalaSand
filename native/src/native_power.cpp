@@ -530,7 +530,8 @@ void NativeSandWorld::process_power() {
         network->second.input_energy += mechanical;
         turbine.mass_throughput += admitted; turbine.mechanical_output = mechanical; turbine.waste_heat += waste;
         thermal_energy_into_turbines_ += moved_enthalpy; mechanical_energy_produced_ += mechanical; turbine_losses_ += waste;
-        account_local_waste_heat(machine_entities_.at(id).origin, waste);
+        const auto turbine_machine = machine_entities_.find(id);
+        if (turbine_machine != machine_entities_.end()) account_local_waste_heat(turbine_machine->second.origin, waste);
         turbine.state = speed > static_cast<int64_t>(turbine.target_millirpm) * 115 / 100 ? TURBINE_OVERSPEED : speed < turbine.target_millirpm / 4 ? TURBINE_STARTING : TURBINE_RUNNING;
     }
     for (auto &[id, network] : mechanical_networks_) {
@@ -581,7 +582,8 @@ void NativeSandWorld::process_power() {
         electrical->second.generation_available += produced;
         generator.last_mechanical_input = requested_mechanical; generator.last_electrical_output = produced; generator.waste_heat += loss;
         mechanical_energy_consumed_ += requested_mechanical; electrical_energy_produced_ += produced; generator_losses_ += loss;
-        account_local_waste_heat(machine_entities_.at(id).origin, loss);
+        const auto generator_machine = machine_entities_.find(id);
+        if (generator_machine != machine_entities_.end()) account_local_waste_heat(generator_machine->second.origin, loss);
         needed -= produced;
         generator.state = produced <= 0 ? GENERATOR_NO_MECHANICAL : produced < requested_electrical ? GENERATOR_OVERLOAD : GENERATOR_RUNNING;
     }

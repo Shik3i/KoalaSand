@@ -90,6 +90,8 @@ The shared moved flag prevents multiple full translations in one tick. Temperatu
 8. render dirtiness and telemetry publication.
 
 Granular and Water phases share a persistent worker pool and deterministic 3x3 chunk coloring. A movement flag spans physical subsystems. The canonical coloring intentionally migrates the old serial granular hashes; the Phase-7 goldens in `tests/native_correctness.gd` are identical for workers 1, 2, 4, and 8.
+
+Work deferred from a worker to the serial barrier is the part of the tick that cannot scale, so only work that can change something is deferred. A granular move re-derives `reactive_cells_` for the cells it vacates and occupies, but a cell enters that set only if its material is reactive or it carries bound water, and `process_reactions()` clears and rebuilds the set every tick; for anything else the erase finds nothing and the re-activation inserts nothing. `reactive_state_possible()` mirrors that insert rule exactly and gates the deferral. A destination inside the moving cell's own chunk is resolved by index rather than through the chunk map, as the Water path has always done.
 # Phase 8 ordering
 
 Each authoritative tick runs granular and open-world Water first, then local Pipe transfer, logistics/machines, physical fields, Wash Sluices, Banks, and automation. World/Pipe exchange wakes both systems. Pipe and Sluice state participate in `authoritative_physical_hash`; fixed-width integer state keeps replay independent of renderer, worker count, and platform floating-point behavior.

@@ -35,7 +35,7 @@ Never run the Godot executable directly for this repository.
 .\scripts\package_playtest.ps1
 ```
 
-All scripts return nonzero on a failed required subprocess. `scripts/test.ps1 -Quick` is for iteration only; it is not the final gate.
+All scripts return nonzero on a failed required subprocess, and every script is reported: a failing test or benchmark no longer stops the run at the first failure. Windows PowerShell 5.1 wraps each stderr line from a native executable in an `ErrorRecord`, which under `$ErrorActionPreference = 'Stop'` is a terminating error, so the first script that wrote to stderr used to abort the harness and report `scripts/godot.ps1` itself as the fault. The wrapper now relaxes the preference around the native call and restores it afterwards; the exit code decides. `scripts/test.ps1 -Quick` is for iteration only; it is not the final gate.
 
 ## Generated state
 

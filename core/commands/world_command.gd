@@ -28,6 +28,9 @@ enum Type {
 	CUT_ORGANIC = 24,
 	IGNITE = 25,
 	CLEAR_VEGETATION_RECT = 26,
+	# A brush stroke is one player gesture, not one command per cell it covers.
+	PAINT_STROKE = 27,
+	HARVEST_STROKE = 28,
 }
 
 var canonical_tick: int
@@ -64,6 +67,6 @@ static func deserialize(bytes: PackedByteArray) -> WorldCommand:
 	if int(data.get("schema", 0)) != 1 or not data.get("payload", null) is Dictionary:
 		return null
 	var command_type := int(data.get("type", 0))
-	if command_type < Type.CREATIVE_PAINT or command_type > Type.CLEAR_VEGETATION_RECT:
+	if command_type < Type.CREATIVE_PAINT or command_type > Type.HARVEST_STROKE:
 		return null
 	return WorldCommand.new(command_type, Dictionary(data.payload), int(data.get("tick", 0)), int(data.get("order", 0)), int(data.get("player", 0)))

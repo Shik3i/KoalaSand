@@ -853,3 +853,76 @@ All four representative fixtures exceed the hard `100 FPS` owner-playtest gate. 
 The final Factory stability run exited `0` after `600.006 s`, `36,020` ticks and `282,380` frames: `470.6 FPS`, `2.125 ms` frame average, `2.381 ms` p95/p99, `19.987 ms` worst frame and `0.864 ms` worst simulation tick. The clean-profile functional smoke additionally passed Character creation, Build, Save/Exit/Continue, Codex, Settings, Planning Pause, Factory, Creative and local Diagnostics.
 
 The full historical benchmark script is not entirely green after a clean source build. The isolated Phase 3 50k-active Conveyor stress reproducibly measures `17.096 ms/tick` against its `16.67 ms` invariant. The isolated Phase 7 one-million-active Sand stress reproducibly measures `44.0126 ms/tick` at eight workers against the same invariant. Neither test loads the Phase 13.9B UI code, while representative runtime and UI measurements above pass with substantial margin. Both failures remain explicit optimization debt rather than being relabeled as passes.
+
+## Input and simulation performance pass
+
+Both of the gates recorded above are now green, and `scripts/benchmark.ps1 -IncludeRuntime`
+completes end to end for the first time. Full account in [PERFORMANCE_PASS.md](PERFORMANCE_PASS.md).
+
+Two of the numbers above need correcting rather than merely updating. The Phase 3 50k-active
+Conveyor stress measured `15.346 ms/tick` on this host before any change in this pass -- already
+inside its invariant, not the `17.096 ms` recorded above -- and `13.233 ms` after it, because
+belt-moved material travels the granular move path. The Phase 7 one-million-active Sand stress
+was genuinely failing, at `41.914 ms/tick`.
+
+The benchmark script had also never run to completion. Windows PowerShell 5.1 turns each stderr
+line from a native executable into a terminating error under `$ErrorActionPreference = 'Stop'`,
+so the first failing script aborted the harness and reported `scripts/godot.ps1` as the fault.
+Whatever else was failing behind Phase 7 could not have been seen.
+
+### Brush input
+
+One brush gesture was one `WorldCommand` per painted cell. It is now a single `PAINT_STROKE`
+swept natively. Measured through the production scene at 1080p:
+
+| Pointer travel per frame | Before | After |
+|---|---:|---:|
+| `4` cells | `50.16 ms` | `6.76 ms` |
+| `16` cells | `424.72 ms` | `6.88 ms` |
+| `40` cells | `1,115.52 ms` | `6.98 ms` |
+| `80` cells | `2,253.64 ms` | `7.34 ms` |
+| `160` cells | `4,763.40 ms` | `6.81 ms` |
+
+Cost no longer scales with pointer speed. `tests/benchmark_brush_input.gd` fails the run if any
+drag speed exceeds the `16.6 ms` frame budget at p95.
+
+### Granular simulation
+
+Every granular move deferred both affected cells to the serial barrier so that `reactive_cells_`
+could be re-derived, at two hash-set erases and two chunk-map lookups each. For non-reactive
+material that work was a provable no-op, and a million moves per tick meant four million serial
+map operations nothing read. The notification is now issued only when reactive state can change;
+same-chunk destinations are resolved by index instead of through the chunk map; and the
+structure plane is read from the already-resolved chunk.
+
+| One million active Sand cells | Before | After |
+|---:|---:|---:|
+| 1 worker | `96.218 ms` | `50.373 ms` |
+| 2 workers | `69.484 ms` | `25.525 ms` |
+| 4 workers | `51.521 ms` | `14.342 ms` |
+| 8 workers | `41.914 ms` | `7.863 ms` |
+
+The fixture content hash is `5d282148` before and after: identical simulation, `5.3×` the speed
+at eight workers, and near-linear scaling now that the serial component is gone.
+
+### Visible page assembly
+
+`consume_dirty_render_page()` allocated and zero-filled a fresh `3.54 MB` buffer every frame
+before overwriting nearly all of it. The buffer is retained; only regions no chunk covers are
+cleared.
+
+### Representative runtime after the pass
+
+Same host, `1920×1080`, GL Compatibility, 300 ticks per fixture.
+
+| Representative runtime | FPS | Frame average | Frame p95 | Frame p99 |
+|---|---:|---:|---:|---:|
+| Character | `495.2` | `2.019 ms` | `2.083 ms` | `2.778 ms` |
+| Factory | `626.9` | `1.594 ms` | `1.667 ms` | `1.667 ms` |
+| Creative | `504.9` | `1.979 ms` | `2.083 ms` | `2.083 ms` |
+| Realistic Maximum Factory | `220.1` | `4.550 ms` | `5.997 ms` | `8.390 ms` |
+| Dense Synthetic Megafactory | `79.4` | `12.622 ms` | `16.667 ms` | `18.031 ms` |
+
+The Dense Synthetic Megafactory remains the separately disclosed pathological ceiling. It is now
+inside the frame budget on this host rather than well outside it, which does not make it a
+supported gameplay promise.

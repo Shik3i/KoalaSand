@@ -3,6 +3,8 @@ extends Node2D
 const WORLD_SEED := 0x4b53414e44
 const ZOOM_LEVELS: Array[float] = [0.5, 1.0, 1.5, 2.0, 3.0, 5.0, 8.0, 12.0, 16.0, 24.0]
 const GENERATION_WORKERS := 2
+# An interpolated igniter path longer than this is a pointer jump, not a gesture.
+const MAX_STROKE_POINTS := 512
 const MAX_CHUNKS_PUBLISHED_PER_FRAME := 4
 const STREAM_PREFETCH_MARGIN := 2
 const STREAM_EVICTION_MARGIN := 7
@@ -58,6 +60,7 @@ var brush_radius: int = 3
 var diagnostics_visible: bool = false
 var zoom_index: int = 1
 var _painting: bool = false
+var _brush_presentation_dirty: bool = false
 var _panning: bool = false
 var _last_painted_cell := Vector2i.ZERO
 var _capture_path: String = ""
@@ -391,6 +394,14 @@ func _process(delta: float) -> void:
 		if overlay.show_chunk_debug or overlay.show_geology_heatmap or _info_mode:
 			overlay.queue_redraw()
 		_update_status()
+	if _brush_presentation_dirty:
+		_brush_presentation_dirty = false
+		# Only when the block above did not already redraw this frame, and through the same
+		# visible-page path it uses. render_dirty_chunks() with no area takes the per-chunk
+		# sprite path instead, which the page renderer then frees again on its next call.
+		if due_ticks == 0 and not chunks_changed:
+			renderer.render_dirty_chunks(_expanded_chunk_rect(_visible_chunk_rect, 1))
+			_update_status()
 	_maybe_queue_capture()
 	_maybe_start_runtime_benchmark()
 	_maybe_finish_runtime_benchmark()
@@ -731,19 +742,83 @@ func _handle_mouse_motion(event: InputEventMouseMotion) -> void:
 
 
 func _paint_line(from_cell: Vector2i, to_cell: Vector2i) -> void:
+	# One drag of the pointer is one gesture, and it travels as one batch.
+	#
+	# This used to walk the line cell by cell and submit a separate command -- with its own
+	# CommandBatch, its own deep-copied payload, its own read of the whole statistics dictionary
+	# and its own serialised log entry -- for every cell of every stamp. A radius-3 brush moved
+	# 160 cells in a frame came to roughly 4,700 round trips and about two seconds of GDScript,
+	# for work the simulation does in a tenth of a millisecond. Frame rate collapsed to zero
+	# exactly when the player was doing the most basic thing the game offers.
+	_submit_brush_batch(_brush_commands(from_cell, to_cell))
+	# Redrawing and rebuilding the status text are per-frame concerns. Mouse motion arrives
+	# several times per frame, so doing them here did the work several times over.
+	_brush_presentation_dirty = true
+
+
+func _brush_commands(from_cell: Vector2i, to_cell: Vector2i) -> Array:
+	if brush_mode == BrushMode.CLEAR_VEGETATION:
+		var left := mini(from_cell.x, to_cell.x) - brush_radius
+		var top := mini(from_cell.y, to_cell.y) - brush_radius
+		var right := maxi(from_cell.x, to_cell.x) + brush_radius
+		var bottom := maxi(from_cell.y, to_cell.y) + brush_radius
+		return [[WorldCommand.Type.CLEAR_VEGETATION_RECT, {
+			"x": left, "y": top, "width": right - left + 1, "height": bottom - top + 1,
+		}]]
+	if brush_mode == BrushMode.IGNITE:
+		# The igniter leaves a trail, so it stays one command per point along the path -- but
+		# all of them in a single batch.
+		var ignitions: Array = []
+		for point in _stroke_points(from_cell, to_cell):
+			ignitions.append([WorldCommand.Type.IGNITE, {"x": point.x, "y": point.y, "energy": 24000000}])
+		return ignitions
+	if brush_mode == BrushMode.HARVEST:
+		return [[WorldCommand.Type.HARVEST_STROKE, {
+			"x0": from_cell.x, "y0": from_cell.y, "x1": to_cell.x, "y1": to_cell.y, "radius": brush_radius,
+		}]]
+	return [[WorldCommand.Type.PAINT_STROKE, {
+		"x0": from_cell.x, "y0": from_cell.y, "x1": to_cell.x, "y1": to_cell.y,
+		"radius": brush_radius, "material_id": _current_brush_material(),
+	}]]
+
+
+func _stroke_points(from_cell: Vector2i, to_cell: Vector2i) -> Array[Vector2i]:
 	var delta := to_cell - from_cell
 	var steps := maxi(absi(delta.x), absi(delta.y))
+	var points: Array[Vector2i] = []
 	if steps == 0:
-		_paint_stamp(to_cell)
-	else:
-		for step_index in range(steps + 1):
-			var fraction := float(step_index) / float(steps)
-			_paint_stamp(Vector2i(
-				roundi(lerpf(from_cell.x, to_cell.x, fraction)),
-				roundi(lerpf(from_cell.y, to_cell.y, fraction))
-			))
-	renderer.render_dirty_chunks()
-	_update_status()
+		points.append(to_cell)
+		return points
+	steps = mini(steps, MAX_STROKE_POINTS)
+	for step_index in range(steps + 1):
+		var fraction := float(step_index) / float(steps)
+		points.append(Vector2i(
+			roundi(lerpf(from_cell.x, to_cell.x, fraction)),
+			roundi(lerpf(from_cell.y, to_cell.y, fraction))
+		))
+	return points
+
+
+func _submit_brush_batch(entries: Array) -> bool:
+	if entries.is_empty() or world == null:
+		return false
+	var tick := int(world.get_statistics().get("tick", 0))
+	var sequence := Time.get_ticks_usec()
+	var batch := CommandBatch.new("brush:%d" % sequence, 0, sequence, "Brush stroke", CommandBatch.ValidationMode.BEST_EFFORT)
+	for entry: Array in entries:
+		batch.add(WorldCommand.new(int(entry[0]), entry[1] as Dictionary, tick))
+	var result := _command_bus.submit_batch(world, batch)
+	var applied := int(result.get("applied", 0))
+	if applied == 0:
+		# One rejection per gesture, not one per cell: painting into the world edge used to
+		# retrigger the invalid sound hundreds of times a frame.
+		if _audio_mixer != null: _audio_mixer.play_ui(&"invalid")
+		return false
+	if _game_session.preset_id == GameModeCapabilities.Preset.CHARACTER and brush_mode in [BrushMode.ERASE, BrushMode.HARVEST]:
+		factory_hud.demonstrate_onboarding("DIG")
+	if _game_session.preset_id == GameModeCapabilities.Preset.CREATIVE and brush_mode in [BrushMode.RAW_SAND, BrushMode.STONE, BrushMode.ERASE]:
+		factory_hud.demonstrate_onboarding("PAINT_OR_ERASE")
+	return true
 
 
 func _handle_wiring_click(cell: Vector2i) -> void:
@@ -820,31 +895,6 @@ func _update_automation_inspector() -> void:
 	automation_details.text = "AUTOMATION / %s  #%d\n\nIN A: %d   IN B: %d   OUT: %d\nmode %d   threshold %d\nprobe %s   target %s\n\nEnter toggles Manual Switch\nDelete removes component   Y closes" % [
 		name, component_id, state.input_a, state.input_b, state.output, state.mode, state.threshold, state.probe_size, state.target_position
 	]
-func _paint_stamp(center: Vector2i) -> void:
-	if brush_mode == BrushMode.CLEAR_VEGETATION:
-		_submit_world_command(WorldCommand.Type.CLEAR_VEGETATION_RECT, {
-			"x": center.x - brush_radius, "y": center.y - brush_radius,
-			"width": brush_radius * 2 + 1, "height": brush_radius * 2 + 1,
-		})
-		return
-	if brush_mode == BrushMode.IGNITE:
-		_submit_world_command(WorldCommand.Type.IGNITE, {"x": center.x, "y": center.y, "energy": 24000000})
-		return
-	if brush_mode == BrushMode.HARVEST:
-		for offset_y in range(-brush_radius, brush_radius + 1):
-			for offset_x in range(-brush_radius, brush_radius + 1):
-				if offset_x * offset_x + offset_y * offset_y <= brush_radius * brush_radius:
-					var harvest_cell := center + Vector2i(offset_x, offset_y)
-					_submit_world_command(WorldCommand.Type.HARVEST, {"x": harvest_cell.x, "y": harvest_cell.y})
-		return
-	var material_id := _current_brush_material()
-	for offset_y in range(-brush_radius, brush_radius + 1):
-		for offset_x in range(-brush_radius, brush_radius + 1):
-			if offset_x * offset_x + offset_y * offset_y > brush_radius * brush_radius:
-				continue
-			var paint_cell := center + Vector2i(offset_x, offset_y)
-			var command_type := WorldCommand.Type.CREATIVE_ERASE if material_id == 0 else WorldCommand.Type.CREATIVE_PAINT
-			_submit_world_command(command_type, {"x": paint_cell.x, "y": paint_cell.y, "material_id": material_id})
 
 
 func _current_brush_material() -> int:
@@ -3657,9 +3707,23 @@ func _update_status() -> void:
 	var progression: Dictionary = world.get_progression_state()
 	reserve_label.text = "GLASS %d   IRON %d   GOLD %d" % [progression.glass, progression.iron, progression.gold]
 	var toolbar := $HUD/BuildToolbar/Margin/Tools
-	toolbar.get_node("Sieve").text = "[V] Sieve" if world.is_structure_unlocked(6) else "[V] LOCKED · Dry Separation"
-	toolbar.get_node("Magnetic").text = "[M] Magnetic" if world.is_structure_unlocked(7) else "[M] LOCKED · Ferrous Separation"
-	diagnostics_label.text = (
+	var sieve_label := "[V] Sieve" if world.is_structure_unlocked(6) else "[V] LOCKED · Dry Separation"
+	var magnetic_label := "[M] Magnetic" if world.is_structure_unlocked(7) else "[M] LOCKED · Ferrous Separation"
+	# Assigning a Button.text re-runs its layout even when the string is identical, and these
+	# two change once per playthrough at most.
+	var sieve_button := toolbar.get_node("Sieve")
+	if sieve_button.text != sieve_label: sieve_button.text = sieve_label
+	var magnetic_button := toolbar.get_node("Magnetic")
+	if magnetic_button.text != magnetic_label: magnetic_button.text = magnetic_label
+
+	# The diagnostics panel is a developer overlay, hidden unless it is switched on. Everything
+	# below reads a dozen native statistics dictionaries and then assigns to a Label about
+	# fifteen separate times, each assignment re-shaping the text -- and it ran every frame the
+	# world changed, for a panel nobody was looking at.
+	if not diagnostics_panel.visible:
+		return
+
+	var diagnostics_text := (
 		"SIMULATION\n"
 		+ "render FPS        %.1f\nframe ms          %.2f\ntick              %d\nsim latest/avg    %.3f / %.3f ms\nsim worst         %.3f ms\nsimulation Hz     %.1f\nactive chunks     %d\nactive rects      %d\nactive region     %d cells\nsleeping chunks   %d\nallocated chunks  %d\n"
 		+ "last movements    %d\nvisited cells     %d\nskipped cells     %d\nworkers           %d\nworker use        %.0f%%\n\nRENDER\n"
@@ -3694,7 +3758,7 @@ func _update_status() -> void:
 	if not _phase10_view.is_empty() and world.has_method("get_power_statistics"):
 		var phase10_power: Dictionary = world.get_power_statistics()
 		var phase10_mechanical: Dictionary = world.get_mechanical_statistics()
-		diagnostics_label.text += "\n\nPOWER / MECHANICAL\ngrid networks/active %d / %d   poles/edges %d / %d\ngeneration/demand/delivered %d / %d / %d\nstorage %d / %d   power %.3f ms\nshaft networks/active %d / %d   segments %d\nrotational energy %d   inertia %d   mechanical %.3f ms" % [
+		diagnostics_text += "\n\nPOWER / MECHANICAL\ngrid networks/active %d / %d   poles/edges %d / %d\ngeneration/demand/delivered %d / %d / %d\nstorage %d / %d   power %.3f ms\nshaft networks/active %d / %d   segments %d\nrotational energy %d   inertia %d   mechanical %.3f ms" % [
 			phase10_power.get("networks", 0), phase10_power.get("active_networks", 0), phase10_power.get("poles", 0), phase10_power.get("edges", 0),
 			phase10_power.get("generation", 0), phase10_power.get("demand", 0), phase10_power.get("delivered", 0),
 			phase10_power.get("storage", 0), phase10_power.get("storage_capacity", 0), float(phase10_power.get("power_usec", 0)) / 1000.0,
@@ -3704,7 +3768,7 @@ func _update_status() -> void:
 	if _phase8_view == "diagnostics":
 		var quick_pipe: Dictionary = world.get_pipe_statistics()
 		var quick_wet: Dictionary = world.get_wet_processing_statistics()
-		diagnostics_label.text += "\n\nPHASE 8 FLUID\nPipe active/total %d/%d   visited %d\nflow transfers %d   mass %d   %.3f ms\nPumps/Valves %d/%d   total leak %d\nSluice moved/captured %d/%d   %.3f ms" % [
+		diagnostics_text += "\n\nPHASE 8 FLUID\nPipe active/total %d/%d   visited %d\nflow transfers %d   mass %d   %.3f ms\nPumps/Valves %d/%d   total leak %d\nSluice moved/captured %d/%d   %.3f ms" % [
 			quick_pipe.segments_active, quick_pipe.segments_total, quick_pipe.segments_visited,
 			quick_pipe.transfers, quick_pipe.mass_total, float(quick_pipe.pipe_usec) / 1000.0,
 			quick_pipe.pumps, quick_pipe.valves, quick_pipe.leak_mass_total,
@@ -3712,7 +3776,7 @@ func _update_status() -> void:
 		]
 	var generation: Dictionary = world.get_generation_statistics()
 	var profile: Dictionary = world.get_geology_profile_at(cursor)
-	diagnostics_label.text += (
+	diagnostics_text += (
 		"\nSTREAMING / GEOLOGY\n"
 		+ "seed %d   queue/in flight %d/%d\ncompleted/published %d/%d\ngen avg/worst %.3f/%.3f ms   evicted %d\n"
 		+ "cursor material %d   profile %d\nSi %.2f%%   Fe %.2f%%\nheavy %.2f%%   other %.2f%%   Au %.3f ppm"
@@ -3743,14 +3807,14 @@ func _update_status() -> void:
 	var signature: int = world.get_mineral_signature(cursor)
 	var constituent_names := ["SILICA", "IRON_BEARING", "HEAVY_MINERAL", "GOLD_BEARING", "OTHER"]
 	var constituent: int = world.get_hidden_constituent(provenance, signature) if provenance > 0 else -1
-	diagnostics_label.text += "\nmaterial %s (%d)   amount %d\ntemperature %.1f °C   phase progress %d\nprovenance/signature %d / %d\nhidden constituent %s" % [
+	diagnostics_text += "\nmaterial %s (%d)   amount %d\ntemperature %.1f °C   phase progress %d\nprovenance/signature %d / %d\nhidden constituent %s" % [
 		material_name, material_id, material_amount, float(material_temperature) * 0.25 - 273.15, phase_progress,
 		provenance, signature, constituent_names[constituent] if constituent >= 0 else "n/a"
 	]
 	var structures: Dictionary = world.get_structure_statistics()
 	var processing: Dictionary = world.get_processing_statistics()
 	var bank_stats: Dictionary = world.get_bank_statistics()
-	diagnostics_label.text += (
+	diagnostics_text += (
 		"\n\nFACTORY LOGISTICS\n"
 		+ "structures/chunks %d / %d\nbelts total/active %d / %d\nconsidered/skipped %d / %d\nmoves/blocked %d / %d\n"
 		+ "machines %d   logistics %.3f ms\nrender tiles %d   update %.3f ms\n\nPROCESSING\n"
@@ -3770,13 +3834,13 @@ func _update_status() -> void:
 		processing.get("sieve_processed_total", 0), processing.get("magnetic_processed_total", 0), processing.get("furnace_processed_total", 0),
 		processing.get("glass_total", 0), processing.get("iron_total", 0), processing.get("gold_total", 0), processing.get("residue_total", 0), processing.get("ash_total", 0),
 	]
-	diagnostics_label.text += "\n\nRESEARCH BANK\nreserves G/I/Au %d / %d / %d\nbanks total/active/visited %d / %d / %d\naccepted/rejected/blocked %d / %d / %d   %.3f ms" % [
+	diagnostics_text += "\n\nRESEARCH BANK\nreserves G/I/Au %d / %d / %d\nbanks total/active/visited %d / %d / %d\naccepted/rejected/blocked %d / %d / %d   %.3f ms" % [
 		progression.glass, progression.iron, progression.gold,
 		bank_stats.banks_total, bank_stats.banks_active, bank_stats.banks_visited,
 		bank_stats.accepted_cells, bank_stats.rejected_cells, bank_stats.blocked_banks, float(bank_stats.bank_usec) / 1000.0,
 	]
 	var automation: Dictionary = world.get_automation_statistics()
-	diagnostics_label.text += "\n\nAUTOMATION\ncomponents/awake %d / %d   wires %d\ndirty/changed %d / %d\nsensors/logic %d / %d   actuators %d\ncircuit %.3f ms   topology %.3f ms" % [
+	diagnostics_text += "\n\nAUTOMATION\ncomponents/awake %d / %d   wires %d\ndirty/changed %d / %d\nsensors/logic %d / %d   actuators %d\ncircuit %.3f ms   topology %.3f ms" % [
 		automation.components_total, automation.components_awake, automation.wires_total,
 		automation.dirty_nodes, automation.signals_changed, automation.sensor_evaluations,
 		automation.logic_evaluations, automation.actuator_changes, automation.circuit_ms, automation.topology_rebuild_ms,
@@ -3784,7 +3848,7 @@ func _update_status() -> void:
 	if world.has_method("get_power_statistics") and _phase10_view.is_empty():
 		var power: Dictionary = world.get_power_statistics()
 		var mechanical: Dictionary = world.get_mechanical_statistics()
-		diagnostics_label.text += "\n\nPOWER / MECHANICAL\ngrid networks/active %d / %d   poles/edges %d / %d\ngeneration/demand/delivered %d / %d / %d\nstorage %d / %d   power %.3f ms\nshaft networks/active %d / %d   segments %d\nrotational energy %d   inertia %d   mechanical %.3f ms" % [
+		diagnostics_text += "\n\nPOWER / MECHANICAL\ngrid networks/active %d / %d   poles/edges %d / %d\ngeneration/demand/delivered %d / %d / %d\nstorage %d / %d   power %.3f ms\nshaft networks/active %d / %d   segments %d\nrotational energy %d   inertia %d   mechanical %.3f ms" % [
 			power.get("networks", 0), power.get("active_networks", 0), power.get("poles", 0), power.get("edges", 0),
 			power.get("generation", 0), power.get("demand", 0), power.get("delivered", 0),
 			power.get("storage", 0), power.get("storage_capacity", 0), float(power.get("power_usec", 0)) / 1000.0,
@@ -3794,7 +3858,7 @@ func _update_status() -> void:
 	if world.has_method("get_pipe_statistics"):
 		var pipe_stats: Dictionary = world.get_pipe_statistics()
 		var wet_stats: Dictionary = world.get_wet_processing_statistics()
-		diagnostics_label.text += "\n\nFLUID LOGISTICS\nsegments active/total %d / %d   visited %d\ntransfers %d   mass %d   %.3f ms\npump/valve work %d / %d   leaks %d\nsluices active/total %d / %d   wet %.3f ms\ngrains moved/captured %d / %d" % [
+		diagnostics_text += "\n\nFLUID LOGISTICS\nsegments active/total %d / %d   visited %d\ntransfers %d   mass %d   %.3f ms\npump/valve work %d / %d   leaks %d\nsluices active/total %d / %d   wet %.3f ms\ngrains moved/captured %d / %d" % [
 			pipe_stats.segments_active, pipe_stats.segments_total, pipe_stats.segments_visited,
 			pipe_stats.transfers, pipe_stats.mass_total, float(pipe_stats.pipe_usec) / 1000.0,
 			pipe_stats.pump_work, pipe_stats.valve_work, pipe_stats.leak_mass_total,
@@ -3806,7 +3870,7 @@ func _update_status() -> void:
 	var machine: Dictionary = world.get_machine_state_at(cursor)
 	if not machine.is_empty():
 		var states := ["IDLE", "NO_INPUT", "NO_FUEL", "RUNNING", "OUTPUT_BLOCKED", "ASH_BLOCKED", "ACCEPTING", "REJECTING", "REJECT_BLOCKED", "INPUT_BLOCKED"]
-		diagnostics_label.text += "\n\nMACHINE INSPECTOR\nstate %s   input %d   result %d\nprogress %d/%d   fuel %d   ash %s\nprocessed/emitted %d/%d   route %d" % [
+		diagnostics_text += "\n\nMACHINE INSPECTOR\nstate %s   input %d   result %d\nprogress %d/%d   fuel %d   ash %s\nprocessed/emitted %d/%d   route %d" % [
 			states[clampi(int(machine.state), 0, states.size() - 1)], machine.current_input, machine.result_waiting,
 			machine.progress_ticks, machine.process_ticks, machine.fuel_remaining, str(machine.ash_waiting),
 			machine.processed_cells, machine.emitted_cells, machine.last_output_route,
@@ -3816,18 +3880,19 @@ func _update_status() -> void:
 		if not pipe.is_empty():
 			var fluid_definition := materials.get_definition(int(pipe.get("fluid_type", 0)))
 			var fluid_name := fluid_definition.display_name if fluid_definition != null else "Empty"
-			diagnostics_label.text += "\n\nFLUID INSPECTOR\n%s %d / 65535   fill %d/1000\nflow %d   temp %.1f °C   pressure %d\nhealth %d   %s" % [
+			diagnostics_text += "\n\nFLUID INSPECTOR\n%s %d / 65535   fill %d/1000\nflow %d   temp %.1f °C   pressure %d\nhealth %d   %s" % [
 				fluid_name, pipe.get("mass", 0), int(int(pipe.get("mass", 0)) * 1000 / 65535), pipe.get("flow", 0),
 				float(pipe.get("temperature", 0)) * 0.25 - 273.15, pipe.get("pressure", 0), pipe.get("health", 0), pipe.get("state", "IDLE"),
 			]
 	if world.has_method("get_power_state_at"):
 		var power_state: Dictionary = world.get_power_state_at(cursor)
 		if not power_state.is_empty() and int(power_state.get("type_id", 0)) >= 26:
-			diagnostics_label.text += "\n\nPOWER INSPECTOR\nmechanical/grid %d / %d   speed %d mRPM\nstate %d   throttle %d/1000\ngeneration/load %d / %d   satisfaction %d/1000" % [
+			diagnostics_text += "\n\nPOWER INSPECTOR\nmechanical/grid %d / %d   speed %d mRPM\nstate %d   throttle %d/1000\ngeneration/load %d / %d   satisfaction %d/1000" % [
 				power_state.get("mechanical_network_id", 0), power_state.get("power_network_id", 0), power_state.get("speed_millirpm", 0),
 				power_state.get("state", 0), power_state.get("throttle", 0),
 				power_state.get("electrical_output", 0), power_state.get("requested_rate", 0), power_state.get("satisfaction", 0),
 			]
+	diagnostics_label.text = diagnostics_text
 
 
 func _parse_capture_arguments() -> void:

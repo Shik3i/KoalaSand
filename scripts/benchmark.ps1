@@ -32,19 +32,45 @@ $Benchmarks = @(
     'tests/benchmark_phase13.gd',
     'tests/benchmark_phase135.gd',
     'tests/benchmark_p0_recovery.gd',
-    'tests/benchmark_p05_world_quality.gd'
+    'tests/benchmark_p05_world_quality.gd',
+    'tests/benchmark_v5_worldgen.gd',
+    'tests/benchmark_brush_input.gd'
 )
 $RenderedBenchmarks = @(
     'tests/benchmark_phase6_wire_render.gd',
     'tests/benchmark_phase675_render.gd'
 )
 
+# Windows PowerShell 5.1 wraps every stderr line from a native executable in an ErrorRecord.
+# With $ErrorActionPreference = 'Stop' that is a terminating error, so the first script that
+# writes anything to stderr -- which is what a failing script does -- aborted the whole run and
+# reported itself as a crash of the harness. The remaining scripts never ran and the summary
+# never printed. Collect the streams with the preference relaxed for the duration of the call,
+# and let the exit code decide what failed.
+function Invoke-GodotScript {
+    param(
+        [Parameter(Mandatory = $true)] [string] $Wrapper,
+        [Parameter(Mandatory = $true)] [string[]] $Arguments
+    )
+    $Previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $Lines = @(& $Wrapper @Arguments 2>&1 | ForEach-Object { $_.ToString() })
+        $Code = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $Previous
+    }
+    return [pscustomobject]@{ Lines = $Lines; ExitCode = $Code }
+}
+
 $Failures = @()
 foreach ($Benchmark in $Benchmarks) {
     $Resource = 'res://' + $Benchmark.Replace('\', '/')
     Write-Output "BENCHMARK_START $Resource"
-    $Output = @(& $Godot -MuteAudio --headless --path $RepositoryRoot --script $Resource 2>&1)
-    $ExitCode = $LASTEXITCODE
+    $Run = Invoke-GodotScript -Wrapper $Godot -Arguments @('-MuteAudio', '--headless', '--path', $RepositoryRoot, '--script', $Resource)
+    $Output = $Run.Lines
+    $ExitCode = $Run.ExitCode
     $Output | ForEach-Object { Write-Output $_ }
     $Text = $Output -join "`n"
     if ($ExitCode -ne 0 -or $Text -match '(?m)^(SCRIPT ERROR|ERROR: Failed to load script|ERROR: Cannot open file|Parse Error)') {
@@ -55,8 +81,9 @@ foreach ($Benchmark in $Benchmarks) {
 foreach ($Benchmark in $RenderedBenchmarks) {
     $Resource = 'res://' + $Benchmark.Replace('\', '/')
     Write-Output "RENDER_BENCHMARK_START $Resource"
-    $Output = @(& $Godot -MuteAudio --path $RepositoryRoot --script $Resource 2>&1)
-    $ExitCode = $LASTEXITCODE
+    $Run = Invoke-GodotScript -Wrapper $Godot -Arguments @('-MuteAudio', '--path', $RepositoryRoot, '--script', $Resource)
+    $Output = $Run.Lines
+    $ExitCode = $Run.ExitCode
     $Output | ForEach-Object { Write-Output $_ }
     $Text = $Output -join "`n"
     if ($ExitCode -ne 0 -or $Text -match '(?m)^(SCRIPT ERROR|ERROR: Failed to load script|ERROR: Cannot open file|Parse Error)') {
@@ -74,8 +101,9 @@ if ($IncludeRuntime) {
     )
     foreach ($Case in $RuntimeCases) {
         Write-Output "RUNTIME_BENCHMARK_START $($Case -join ' ')"
-        & $Godot -MuteAudio --path $RepositoryRoot --user-args @Case --benchmark-runtime-ticks=300 --capture-1080p
-        if ($LASTEXITCODE -ne 0) { $Failures += "runtime $($Case -join ' ') exit=$LASTEXITCODE" }
+        $Run = Invoke-GodotScript -Wrapper $Godot -Arguments (@('-MuteAudio', '--path', $RepositoryRoot, '--user-args') + $Case + @('--benchmark-runtime-ticks=300', '--capture-1080p'))
+        $Run.Lines | ForEach-Object { Write-Output $_ }
+        if ($Run.ExitCode -ne 0) { $Failures += "runtime $($Case -join ' ') exit=$($Run.ExitCode)" }
     }
 }
 

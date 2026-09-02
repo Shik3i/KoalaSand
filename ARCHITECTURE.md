@@ -62,7 +62,7 @@ Factory control is native authoritative and data-oriented: compact component/edg
 
 `koalasand_core` contains standard C++20 fixed-width traits and worker-policy primitives. `koalasand_native` is the Godot façade and current world owner. Physical processors register compact chunk/rectangle watchers; cell mutation wakes only intersecting Screen, Magnet, or Heater IDs. Expensive field/screen/heat work is absent from idle ticks.
 
-Normal gameplay mutation flows through versioned `WorldCommand` records. Capability presets separate Creative, future Character, and Spectator authority without changing the world format. Rendering consumes snapshots/queries only; overlays request visible coarse samples on demand.
+Normal gameplay mutation flows through versioned `WorldCommand` records. A command is one player action, not one cell: a brush drag is a single `PAINT_STROKE` carrying its endpoints and radius, swept natively, rather than a command per painted cell. Capability presets separate Creative, future Character, and Spectator authority without changing the world format. Rendering consumes snapshots/queries only; overlays request visible coarse samples on demand.
 
 ## Phase 7 unified matter boundary
 

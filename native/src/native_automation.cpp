@@ -460,8 +460,11 @@ PackedInt32Array NativeSandWorld::get_visible_automation_connections(Rect2i cell
     }
     std::sort(visible.begin(), visible.end(), [](const AutomationConnection *a, const AutomationConnection *b) { return a->id < b->id; });
     for (const AutomationConnection *connection : visible) {
-        const AutomationComponent &source = automation_components_.at(connection->source_component);
-        const AutomationComponent &target = automation_components_.at(connection->target_component);
+        const auto source_found = automation_components_.find(connection->source_component);
+        const auto target_found = automation_components_.find(connection->target_component);
+        if (source_found == automation_components_.end() || target_found == automation_components_.end()) continue;
+        const AutomationComponent &source = source_found->second;
+        const AutomationComponent &target = target_found->second;
         result.push_back(static_cast<int32_t>(connection->id));
         result.push_back(source.position.x);
         result.push_back(source.position.y);

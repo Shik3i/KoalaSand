@@ -54,6 +54,8 @@ public:
     int32_t get_provenance(Vector2i world_cell) const;
     int32_t get_mineral_signature(Vector2i world_cell) const;
     int32_t harvest_cell(Vector2i world_cell);
+    int64_t paint_stroke(Vector2i from_cell, Vector2i to_cell, int32_t radius, int32_t material_id);
+    int64_t harvest_stroke(Vector2i from_cell, Vector2i to_cell, int32_t radius);
     int32_t get_hidden_constituent(int32_t profile_id, int32_t mineral_signature) const;
     int32_t process_material_for_test(int32_t material_id, int32_t profile_id, int32_t mineral_signature, int32_t process_id) const;
     int64_t fill_rect(Rect2i area, int32_t material_id, int32_t spacing = 1);
@@ -1671,6 +1673,13 @@ private:
     static const std::vector<AutomationDefinition> &automation_definitions();
     static const AutomationDefinition *automation_definition(int32_t type_id);
     static uint64_t automation_input_key(uint64_t component_id, int32_t port);
+    static bool stroke_mask(Vector2i from_cell, Vector2i to_cell, int32_t radius,
+                            Rect2i &area, std::vector<uint8_t> &mask);
+    static int32_t rounded_fraction(int64_t delta, int32_t step, int32_t steps);
+    // Retained between calls so assembling the visible page does not allocate every frame.
+    PackedByteArray render_page_pixels_;
+    static bool reactive_state_possible(int32_t material, int32_t bound_moisture);
+    void clear_world_state();
     void reset_automation();
     void rebuild_component_watchers(AutomationComponent &component);
     void unregister_component_watchers(const AutomationComponent &component);

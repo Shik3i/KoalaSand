@@ -10,6 +10,15 @@ enum Reason {
 	UNSUPPORTED_ATOMIC_MIX = 5,
 }
 
+# The command and batch logs are a diagnostic tail used by the determinism tests, not a durable
+# journal: nothing in a save file reads them. They used to grow without limit, so a minute of
+# painting left tens of thousands of serialised commands in memory that no one would ever read.
+# Keep the most recent window and let the rest go.
+const LOG_CAPACITY := 4096
+# Trimming copies the whole retained window, so trim in blocks rather than on every command
+# once the window is full.
+const LOG_TRIM_SLACK := 512
+
 var _next_order := 1
 var _log: Array[PackedByteArray] = []
 var _batch_log: Array[PackedByteArray] = []
@@ -23,7 +32,7 @@ func submit(world: Variant, command: WorldCommand) -> bool:
 		_next_order += 1
 	var applied := apply(world, command)
 	if applied:
-		_log.append(command.serialize())
+		_record_command(command)
 	return applied
 
 func apply(world: Variant, command: WorldCommand) -> bool:
@@ -39,6 +48,12 @@ func apply(world: Variant, command: WorldCommand) -> bool:
 		WorldCommand.Type.CREATIVE_ERASE:
 			last_result = world.set_cell(Vector2i(p.x, p.y), 0)
 			return last_result == OK
+		WorldCommand.Type.PAINT_STROKE:
+			last_result = world.paint_stroke(Vector2i(p.x0, p.y0), Vector2i(p.x1, p.y1), int(p.radius), int(p.material_id))
+			return int(last_result) >= 0
+		WorldCommand.Type.HARVEST_STROKE:
+			last_result = world.harvest_stroke(Vector2i(p.x0, p.y0), Vector2i(p.x1, p.y1), int(p.radius))
+			return int(last_result) >= 0
 		WorldCommand.Type.HARVEST:
 			last_result = world.harvest_cell(Vector2i(p.x, p.y))
 			return last_result == OK
@@ -132,9 +147,9 @@ func submit_batch(world: Variant, batch: CommandBatch) -> Dictionary:
 	var native_result := _try_native_structure_batch(world, batch)
 	if not native_result.is_empty():
 		if int(native_result.get("applied", 0)) > 0:
-			_batch_log.append(batch.serialize())
+			_record_batch(batch)
 			for command in batch.commands:
-				_log.append(command.serialize())
+				_record_command(command)
 		last_result = native_result
 		return native_result
 	var validation_started := Time.get_ticks_usec()
@@ -167,9 +182,9 @@ func submit_batch(world: Variant, batch: CommandBatch) -> Dictionary:
 	result.application_usec = Time.get_ticks_usec() - application_started
 	result.relative_id_map = relative_ids
 	if applied > 0:
-		_batch_log.append(batch.serialize())
+		_record_batch(batch)
 		for index in applied:
-			_log.append(batch.commands[index].serialize())
+			_record_command(batch.commands[index])
 	last_result = result
 	return result
 
@@ -223,6 +238,10 @@ func _payload_valid(command: WorldCommand) -> bool:
 	match command.type:
 		WorldCommand.Type.CREATIVE_PAINT:
 			required = ["x", "y", "material_id"]
+		WorldCommand.Type.PAINT_STROKE:
+			required = ["x0", "y0", "x1", "y1", "radius", "material_id"]
+		WorldCommand.Type.HARVEST_STROKE:
+			required = ["x0", "y0", "x1", "y1", "radius"]
 		WorldCommand.Type.CREATIVE_ERASE, WorldCommand.Type.HARVEST, WorldCommand.Type.REMOVE_STRUCTURE, WorldCommand.Type.CUT_ORGANIC, WorldCommand.Type.IGNITE:
 			required = ["x", "y"]
 		WorldCommand.Type.PLACE_STRUCTURE, WorldCommand.Type.CREATE_AUTOMATION_COMPONENT:
@@ -292,6 +311,18 @@ func _resolve_relative_ids(command: WorldCommand, id_map: Dictionary) -> void:
 		command.payload.source_component = int(id_map.get(int(command.payload.source_id), 0))
 	if command.payload.has("target_id"):
 		command.payload.target_component = int(id_map.get(int(command.payload.target_id), 0))
+
+
+func _record_command(command: WorldCommand) -> void:
+	_log.append(command.serialize())
+	if _log.size() > LOG_CAPACITY + LOG_TRIM_SLACK:
+		_log = _log.slice(_log.size() - LOG_CAPACITY)
+
+
+func _record_batch(batch: CommandBatch) -> void:
+	_batch_log.append(batch.serialize())
+	if _batch_log.size() > LOG_CAPACITY + LOG_TRIM_SLACK:
+		_batch_log = _batch_log.slice(_batch_log.size() - LOG_CAPACITY)
 
 
 func _affected_region(batch: CommandBatch) -> Rect2i:

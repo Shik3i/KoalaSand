@@ -37,10 +37,36 @@ $Tests = @(
     'tests/phase139b_layout.gd',
     'tests/p0_recovery_correctness.gd',
     'tests/p05_world_quality.gd',
-    'tests/v5_worldgen.gd'
+    'tests/v5_worldgen.gd',
+    'tests/brush_stroke.gd',
+    'tests/new_world_state.gd',
+    'tests/granular_movement.gd'
 )
 if ($Quick) {
     $Tests = @('tests/test_runner.gd', 'tests/native_correctness.gd', 'tests/phase13_correctness.gd', 'tests/phase13_persistence.gd', 'tests/phase137_hardening.gd')
+}
+
+# Windows PowerShell 5.1 wraps every stderr line from a native executable in an ErrorRecord.
+# With $ErrorActionPreference = 'Stop' that is a terminating error, so the first script that
+# writes anything to stderr -- which is what a failing script does -- aborted the whole run and
+# reported itself as a crash of the harness. The remaining scripts never ran and the summary
+# never printed. Collect the streams with the preference relaxed for the duration of the call,
+# and let the exit code decide what failed.
+function Invoke-GodotScript {
+    param(
+        [Parameter(Mandatory = $true)] [string] $Wrapper,
+        [Parameter(Mandatory = $true)] [string[]] $Arguments
+    )
+    $Previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $Lines = @(& $Wrapper @Arguments 2>&1 | ForEach-Object { $_.ToString() })
+        $Code = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $Previous
+    }
+    return [pscustomobject]@{ Lines = $Lines; ExitCode = $Code }
 }
 
 $Failures = @()
@@ -48,8 +74,9 @@ $Started = [System.Diagnostics.Stopwatch]::StartNew()
 foreach ($Test in $Tests) {
     $Resource = 'res://' + $Test.Replace('\', '/')
     Write-Output "TEST_START $Resource"
-    $Output = @(& $Godot -MuteAudio --headless --path $RepositoryRoot --script $Resource 2>&1)
-    $ExitCode = $LASTEXITCODE
+    $Run = Invoke-GodotScript -Wrapper $Godot -Arguments @('-MuteAudio', '--headless', '--path', $RepositoryRoot, '--script', $Resource)
+    $Output = $Run.Lines
+    $ExitCode = $Run.ExitCode
     $Output | ForEach-Object { Write-Output $_ }
     $Text = $Output -join "`n"
     $FatalDiagnostic = $Text -match '(?m)^(SCRIPT ERROR|ERROR: Failed to load script|ERROR: Cannot open file|Parse Error)'

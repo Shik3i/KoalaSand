@@ -67,21 +67,34 @@ try {
             $LaunchArguments = @($LaunchArguments) + @('--audio-driver', 'Dummy')
         }
     }
-    if ($NativeBacktrace) {
-        $Debugger = Get-Command gdb.exe -ErrorAction SilentlyContinue
-        if ($null -eq $Debugger) {
-            throw 'Native backtrace requested but gdb.exe was not found on PATH.'
+    # Windows PowerShell 5.1 turns every stderr line a native executable writes into an
+    # ErrorRecord, and under $ErrorActionPreference = 'Stop' that is a terminating error the
+    # moment a caller merges the streams. Godot writes its own errors to stderr, so a failing
+    # test or benchmark made this wrapper look like it had crashed: the calling harness stopped
+    # at the first failure, reported the wrapper as the fault, and never ran the rest of the
+    # suite or printed a summary. Godot's exit code is what says whether the run failed.
+    $PreviousErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        if ($NativeBacktrace) {
+            $Debugger = Get-Command gdb.exe -ErrorAction SilentlyContinue
+            if ($null -eq $Debugger) {
+                throw 'Native backtrace requested but gdb.exe was not found on PATH.'
+            }
+            $DebugExecutable = Join-Path (Split-Path -Parent $GodotExecutable) 'Godot_v4.7.1-stable_win64.exe'
+            if (-not (Test-Path -LiteralPath $DebugExecutable -PathType Leaf)) {
+                throw "Native backtrace target not found: $DebugExecutable"
+            }
+            & $Debugger.Source --batch -ex 'set pagination off' -ex run -ex 'thread apply all bt' --args $DebugExecutable @LaunchArguments
         }
-        $DebugExecutable = Join-Path (Split-Path -Parent $GodotExecutable) 'Godot_v4.7.1-stable_win64.exe'
-        if (-not (Test-Path -LiteralPath $DebugExecutable -PathType Leaf)) {
-            throw "Native backtrace target not found: $DebugExecutable"
+        else {
+            & $GodotExecutable @LaunchArguments
         }
-        & $Debugger.Source --batch -ex 'set pagination off' -ex run -ex 'thread apply all bt' --args $DebugExecutable @LaunchArguments
+        $GodotExitCode = $LASTEXITCODE
     }
-    else {
-        & $GodotExecutable @LaunchArguments
+    finally {
+        $ErrorActionPreference = $PreviousErrorAction
     }
-    $GodotExitCode = $LASTEXITCODE
 }
 finally {
     $env:APPDATA = $PreviousAppData

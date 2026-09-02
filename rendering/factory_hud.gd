@@ -537,7 +537,13 @@ func _build_catalog_panel() -> void:
 func _build_side_panels() -> void:
 	_statistics_panel = PanelContainer.new(); _statistics_panel.name = "StatisticsPanel"; _statistics_panel.visible = false; _statistics_panel.mouse_filter = Control.MOUSE_FILTER_STOP; _statistics_panel.z_index = UILayoutPolicy.LAYER_MODAL; add_child(_statistics_panel)
 	var statistics_margin := MarginContainer.new(); statistics_margin.add_theme_constant_override("margin_left", 16); statistics_margin.add_theme_constant_override("margin_top", 14); statistics_margin.add_theme_constant_override("margin_right", 16); statistics_margin.add_theme_constant_override("margin_bottom", 14); _statistics_panel.add_child(statistics_margin)
-	_statistics_text = Label.new(); _statistics_text.vertical_alignment = VERTICAL_ALIGNMENT_TOP; statistics_margin.add_child(_statistics_text)
+	_statistics_text = Label.new(); _statistics_text.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	# The panel is a fixed fraction of the viewport and several rows are longer than it. A Label
+	# without wrapping draws straight through its container, so the production text ran off the
+	# right edge of the screen.
+	_statistics_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_statistics_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	statistics_margin.add_child(_statistics_text)
 	_inspector = PanelContainer.new(); _inspector.name = "InspectorPanel"; _inspector.theme_type_variation = "ElevatedPanel"; _inspector.visible = false; _inspector.mouse_filter = Control.MOUSE_FILTER_STOP; _inspector.z_index = UILayoutPolicy.LAYER_PANEL; add_child(_inspector)
 	var inspector_margin := MarginContainer.new(); inspector_margin.add_theme_constant_override("margin_left", 16); inspector_margin.add_theme_constant_override("margin_top", 14); inspector_margin.add_theme_constant_override("margin_right", 16); inspector_margin.add_theme_constant_override("margin_bottom", 14); _inspector.add_child(inspector_margin)
 	var inspector_column := VBoxContainer.new(); inspector_margin.add_child(inspector_column)
