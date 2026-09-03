@@ -146,6 +146,39 @@ illustration of why the boundary needs a test rather than care.
 and `core/` **from the source files themselves**, and asserts each one resolves to an entry. It
 cannot pass by agreeing with a list this test also wrote.
 
+## 8. Half the Experiments can never be completed
+
+Auditing the name boundary more widely — every dictionary key GDScript reads against every key
+native publishes — turned up the same defect in the Experiments feature. Four of the eight wait
+on a counter that **nothing anywhere produces**:
+
+| Experiment | Waits on | Published by |
+| --- | --- | --- |
+| Heavy Things Settle | `heavy_captured` | `get_wet_processing_statistics` |
+| Air Changes Fire | `charcoal_produced` | `get_organic_statistics` |
+| Build a Vessel | `steam_generated` | `get_gas_statistics` |
+| Contain the Gas | `steam_mass` | `get_pipe_statistics` |
+| Wet Sand, Dry Sand | `wet_then_dry_events` | **nothing** |
+| Material Matters | `vessel_material_comparisons` | **nothing** |
+| Starve the Flame | `oxygen_starved_events` | **nothing** |
+| Iterate the Furnace | `modified_furnace_temperature_gain` | **nothing** |
+
+A player can chase those four forever. I have not invented the counters, because three of them
+need the simulation to measure something it does not currently measure and the definition is a
+design call, not a wiring fix:
+
+- *Wet Sand, Dry Sand* needs "a grain that was wet and then dried" to be a tracked event.
+- *Material Matters* needs a comparison between two vessel wall materials to be recorded.
+- *Iterate the Furnace* needs a baseline furnace temperature to improve on.
+
+*Starve the Flame* is the closest to mechanical — the combustion branch already gates on
+`oxygen >= oxygen_mass`, and the pyrolysis branch already gates on `oxygen < LOW_OXIDIZER` — but
+those are two different lessons ("the fire stalls" versus "you made Charcoal"), and the second
+duplicates *Air Changes Fire*. Guessing would teach the player the wrong physics.
+
+`tests/build_flow.gd` now pins both halves: the four wired counters must stay published, and the
+four missing ones must stay missing. Implementing one makes the test say so.
+
 ---
 
 ## Verification
@@ -157,7 +190,7 @@ refusal said nothing.
 
 | | Result |
 | --- | --- |
-| `tests/build_flow.gd` | 63 checks |
+| `tests/build_flow.gd` | 71 checks |
 | `scripts/test.ps1` | `TEST_SUITE_PASS scripts=35` |
 | `tests/phase139_ftue.gd` | 329 checks |
 | `tests/phase139b_layout.gd` | 237 checks |
@@ -178,6 +211,9 @@ Either the capability table is wrong or the catalog is. I have not guessed which
 table as written would also remove the brush from Factory Mode, and the brush may be the only
 way to excavate there, since Factory Mode has no character to dig with. That is a balance
 decision, not a defect fix.
+
+**Four Experiments need counters that do not exist**, described in §8. Each needs a decision
+about what the simulation should measure before it can be wired.
 
 **The quickbar is ten unlabelled glyphs.** They carry numbers and tooltips, and the Conveyor is
 in slot 1, but nothing on the first screen connects "press 1" to "place a Conveyor".

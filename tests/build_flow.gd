@@ -49,6 +49,7 @@ func _run(scene: Node) -> void:
 	_test_the_objective_tracks_the_simulation(scene)
 	_test_every_codex_link_in_the_ui_resolves(scene)
 	_test_reaching_a_milestone_is_announced(scene)
+	_test_experiments_that_claim_to_be_reachable_are(scene)
 	if failures.is_empty():
 		print("PASS: %d build flow checks" % checks)
 		quit(0)
@@ -250,6 +251,39 @@ func _test_reaching_a_milestone_is_announced(scene: Node) -> void:
 	scene.call("_announce_reached_milestones", reached)
 	_check(hud.last_notification().is_empty(),
 		"a loaded save does not replay its whole history as notifications")
+
+
+# The simulation counters each Experiment waits on, and where the counter comes from. Four of
+# the eight are known to have no counter at all: the key is read, nothing ever publishes it, and
+# the Experiment can never complete. They are listed here rather than quietly ignored so that the
+# gap is visible, cannot grow, and closes the moment someone implements the counter. Adding one
+# of the missing counters makes this test tell you to move its entry into the wired list.
+const EXPERIMENT_SOURCES := {
+	"heavy_captured": "get_wet_processing_statistics",
+	"charcoal_produced": "get_organic_statistics",
+	"steam_generated": "get_gas_statistics",
+	"steam_mass": "get_pipe_statistics",
+}
+const EXPERIMENTS_WITHOUT_A_COUNTER := [
+	"wet_then_dry_events", "vessel_material_comparisons",
+	"oxygen_starved_events", "modified_furnace_temperature_gain",
+]
+
+func _test_experiments_that_claim_to_be_reachable_are(scene: Node) -> void:
+	var world: Variant = scene.get("world")
+	for key: String in EXPERIMENT_SOURCES:
+		var published: Dictionary = world.call(str(EXPERIMENT_SOURCES[key]))
+		_check(published.has(key), "Experiment counter '%s' is published by %s" % [key, EXPERIMENT_SOURCES[key]])
+
+	# And the ones with no counter still have none, so the list stays honest.
+	var everywhere := {}
+	for getter: String in ["get_wet_processing_statistics", "get_organic_statistics", "get_gas_statistics",
+			"get_pipe_statistics", "get_processing_statistics", "get_physical_processing_statistics",
+			"get_thermal_statistics", "get_structure_statistics", "get_power_statistics"]:
+		for key: Variant in (world.call(getter) as Dictionary).keys(): everywhere[str(key)] = true
+	for key: String in EXPERIMENTS_WITHOUT_A_COUNTER:
+		_check(not everywhere.has(key),
+			"'%s' still has no counter; if it now does, wire the Experiment to it" % key)
 
 
 func _scripts_under(root: String) -> Array[String]:

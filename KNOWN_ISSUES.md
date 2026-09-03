@@ -15,6 +15,11 @@ None known after the Phase 13.9 verification gate.
   enforces the capability in the command path. Either the table or the catalog is wrong; see
   [FIRST_RUN_PASS.md](FIRST_RUN_PASS.md). Left for an owner decision because enforcing the table
   as written may remove the only way to excavate in a mode with no character.
+- **Four of the eight Experiments can never be completed:** `wet_then_dry_events`,
+  `vessel_material_comparisons`, `oxygen_starved_events` and `modified_furnace_temperature_gain`
+  are read by `ExperimentTracker` and published by nothing. Each needs a decision about what the
+  simulation should measure; see [FIRST_RUN_PASS.md](FIRST_RUN_PASS.md). The gap is pinned by
+  `tests/build_flow.gd` so it cannot grow.
 - **Manual playtest coverage:** automated captures and state assertions cannot establish subjective controls, readability, audio balance or fun. The owner checklist remains required.
 
 ## Fixed in the first run pass
