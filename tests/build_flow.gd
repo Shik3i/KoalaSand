@@ -16,6 +16,11 @@ const EMPTY_MATERIAL := 0
 const SAND := 2
 const GLASS := 10
 const REFRACTORY_WALL := 40
+const MESH_SCREEN := 41
+const RIFFLE := 43
+const VIBRATION_ACTUATOR := 45
+const WATER := 3
+const STONE := 1
 const REACTION_TEMPERATURE := 5893
 
 class Harness extends Node:
@@ -60,6 +65,9 @@ func _run(scene: Node) -> void:
 	_test_the_second_instruction_tells_the_truth(scene)
 	_test_the_advice_to_dig_it_out_can_be_followed(scene)
 	_test_the_route_to_glass_exists_and_works(scene)
+	_test_the_route_to_a_concentrate_exists_and_works(scene)
+	_test_the_route_through_water_exists_and_works(scene)
+	_test_no_promise_names_a_machine_the_catalog_does_not_have(scene)
 	if failures.is_empty():
 		print("PASS: %d build flow checks" % checks)
 		quit(0)
@@ -451,3 +459,113 @@ func _check(condition: bool, label: String) -> void:
 func _equal(actual: Variant, expected: Variant, label: String) -> void:
 	checks += 1
 	if actual != expected: failures.append("%s expected=%s actual=%s" % [label, expected, actual])
+
+
+func _test_the_route_to_a_concentrate_exists_and_works(scene: Node) -> void:
+	# The third objective used to send the player to the Vibrating Screen, which is a dev
+	# fixture excluded from the catalog. The real mechanic is geometry: a Vibration Actuator
+	# standing next to a Mesh Screen fractionates whatever lands on the Mesh.
+	var blueprints: Variant = scene.get("_blueprints")
+	_check(blueprints.load_blueprint("basic_screen") != null,
+		"the Basic Screen plan the objective names is in the library")
+
+	var world: Variant = scene.get("world")
+	world.set_game_mode(1)
+	var origin := Vector2i(1500, 300)
+	world.paint_stroke(origin - Vector2i(16, 16), origin + Vector2i(16, 10), 16, EMPTY_MATERIAL)
+	for x in range(origin.x - 16, origin.x + 17):
+		world.set_cell(Vector2i(x, origin.y + 6), STONE)
+	var actuator := origin
+	var mesh := actuator + Vector2i(1, 0)
+	_check(int(world.place_structure(VIBRATION_ACTUATOR, actuator, 0)) > 0,
+		"a Vibration Actuator can be placed")
+	_check(int(world.place_structure(MESH_SCREEN, mesh, 0)) > 0, "a Mesh Screen can be placed")
+
+	var before: int = int(world.get_conservation_architecture().get("output_micro_mass", 0))
+	for _tick in range(240):
+		if int(world.get_cell(mesh + Vector2i(0, -1))) == EMPTY_MATERIAL:
+			world.set_cell(mesh + Vector2i(0, -1), SAND)
+		world.step()
+	_check(int(world.get_conservation_architecture().get("output_micro_mass", 0)) > before,
+		"Raw Sand landing on a driven Mesh Screen is fractionated")
+	_check(bool(world.get_milestone_state().get("first_concentrate", false)),
+		"the objective the game shows for this step is the one the simulation marks")
+
+
+func _test_the_route_through_water_exists_and_works(scene: Node) -> void:
+	# The sixth objective used to send the player to the Wash Sluice, also a dev fixture. The
+	# player-facing component is the Riffle, and the condition that is easy to miss -- and that
+	# the criteria now state -- is that it does nothing without Water beside it.
+	var blueprints: Variant = scene.get("_blueprints")
+	_check(blueprints.load_blueprint("basic_wet_sluice") != null,
+		"the Basic Wet Sluice plan the objective names is in the library")
+
+	var world: Variant = scene.get("world")
+	world.set_game_mode(1)
+	var origin := Vector2i(1800, 300)
+	world.paint_stroke(origin - Vector2i(16, 16), origin + Vector2i(16, 10), 16, EMPTY_MATERIAL)
+	for x in range(origin.x - 8, origin.x + 9):
+		world.set_cell(Vector2i(x, origin.y + 2), STONE)
+	var riffle := origin + Vector2i(0, 1)
+	_check(int(world.place_structure(RIFFLE, riffle, 0)) > 0, "a Riffle can be placed")
+	for dy in [0, 1]:
+		world.set_cell(Vector2i(origin.x - 3, origin.y + dy), STONE)
+		world.set_cell(Vector2i(origin.x + 3, origin.y + dy), STONE)
+
+	# Dry first: the same geometry, the same grain, no Water. Nothing may happen, or the
+	# criterion telling the player that Water is what makes a Riffle work would be a guess.
+	for _tick in range(60):
+		if int(world.get_cell(origin)) != SAND: world.set_cell(origin, SAND)
+		world.step()
+	_check(not bool(world.get_milestone_state().get("water_processing", false)),
+		"a Riffle with no Water beside it does nothing")
+
+	for _tick in range(240):
+		for dx in [-2, -1, 1, 2]:
+			var cell := Vector2i(origin.x + dx, origin.y)
+			if int(world.get_cell(cell)) == EMPTY_MATERIAL: world.set_cell(cell, WATER)
+		if int(world.get_cell(origin)) != SAND: world.set_cell(origin, SAND)
+		world.step()
+	_check(bool(world.get_milestone_state().get("water_processing", false)),
+		"grains carried over a Riffle by Water are processed")
+
+
+func _test_no_promise_names_a_machine_the_catalog_does_not_have(scene: Node) -> void:
+	# Three separate places told the player to use a machine that cannot be built: the second
+	# and third objectives, and the reward line of three research nodes -- the text a player
+	# reads while deciding how to spend a scarce resource. COMPOSABLE_PROCESSING.md retired
+	# those machines to dev fixtures and replaced them with geometry, and the text layer was
+	# never brought along. This pins every one of those surfaces at once.
+	var world: Variant = scene.get("world")
+	var forbidden: Array[String] = []
+	for definition: Dictionary in world.get_structure_definitions():
+		var type_id := int(definition.get("type_id", -1))
+		if ComponentPresentation.DEV_TYPES.has(type_id):
+			var display := str(definition.get("display_name", ""))
+			if not display.is_empty(): forbidden.append(display)
+	_check(forbidden.size() >= 4, "the dev fixtures have names to look for (%d)" % forbidden.size())
+
+	var surfaces: Array[Array] = []
+	for objective: Dictionary in scene.get("MILESTONE_OBJECTIVES"):
+		for line: String in objective.get("criteria", []):
+			surfaces.append(["objective %s" % str(objective.get("key", "?")), line])
+	for research: Dictionary in world.get_research_definitions():
+		surfaces.append(["research %s effect" % str(research.get("id", "?")), str(research.get("effect", ""))])
+		surfaces.append(["research %s description" % str(research.get("id", "?")), str(research.get("description", ""))])
+
+	# One surface is a known, undecided contradiction rather than a text slip:
+	# thermal.cookware gates only the Iron Pot, and the Pot is in DEV_TYPES. Researching
+	# Cookware therefore costs 900 research and 60 Iron and unlocks nothing the player can
+	# place. PHYSICAL_COOKING.md calls the Pot "a minimal cooking proof, not survival
+	# gameplay", so the fix is either to retire the research node or to put the Pot in the
+	# catalog -- an owner decision, not a wording change. It is listed here so that it cannot
+	# be forgotten and so that no second one can appear beside it unnoticed.
+	const KNOWN_UNRESOLVED := ["research thermal.cookware effect"]
+
+	var violations: Array[String] = []
+	for surface: Array in surfaces:
+		for name: String in forbidden:
+			if str(surface[1]).contains(name): violations.append(str(surface[0]))
+	violations.sort()
+	_equal(violations, KNOWN_UNRESOLVED,
+		"no player-facing promise names a machine the catalog does not have")

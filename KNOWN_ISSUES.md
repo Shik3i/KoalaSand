@@ -8,6 +8,32 @@ None known after the Phase 13.9 verification gate.
 
 ## P1
 
+- **Six research nodes charge for an effect a player cannot receive.** `is_physical_processor()`
+  is true only for the Radiant Crude Furnace, Vibrating Screen, Overbelt Magnetic Separator and
+  Wash Sluice, and all four are `DEV_TYPES` excluded from the Build Catalog. Every research node
+  whose effect reaches only that subsystem is therefore inert in a normal game:
+  `furnace.fuel_economy_1` (1200 Glass / 30 Iron), `furnace.throughput_1` (2200 / 80),
+  `logistics.high_throughput_handling` (3500 / 180), `processing.precision_screening`
+  (4000 / 250 / 1 Gold) and `processing.concentrate_recovery` (6000 / 400 / 2 Gold) -- the most
+  expensive node a player can see. `split_into_ledger()`, which is what the composable geometry
+  actually runs, reads no research at all. A sixth, `thermal.cookware` (900 / 60), gates only the
+  Iron Pot, which is also a dev fixture, so it unlocks nothing placeable.
+  `logistics.high_throughput_handling` and `processing.precision_screening` are additionally
+  prerequisites on the path to `processing.concentrate_recovery`, so the route through the late
+  tree runs through dead nodes. Left for an owner decision because the two repairs are different
+  designs: retire the nodes, or re-point their effects at the composable routes in
+  `split_into_ledger()` and `process_component_processing()`. The wording of every node was
+  corrected in this pass; the economics were not. `tests/build_flow.gd` pins the one text surface
+  that still names a dev fixture so no second one can appear unnoticed.
+- **Release identity is still the owner playtest one:** `config/version` reads
+  `0.1.0-playtest.5`, the package is named `KoalaSand-0.1.0-playtest.5-windows-x64`, and
+  `README-PLAYTEST.txt` opens with "Owner first-play build" and asks for bug reports without
+  naming anywhere to send them. All three are owner calls: the version string cascades into the
+  package name and `BUILD_MANIFEST.json`, and the report channel does not exist yet.
+- **`LICENSE` grants a recipient nothing.** It reserves all rights and permits no use, which is
+  the correct posture for the source but is also what ships beside the binary as
+  `LICENSE-KOALASAND.txt`. A public build normally carries an explicit permission to download
+  and play it. Legal wording is an owner decision.
 - **Dense synthetic Megafactory:** intentionally pathological density now measures `59.1 FPS`, `18.750 ms` p95 and `19.737 ms` p99 as the median of four consecutive runs, up from `43.7 FPS` / `25.000 ms` / `27.905 ms`. Single runs of this fixture have measured as high as `79.4 FPS` on an idle host and should not be quoted. It is still reported separately from the realistic maximum-factory gate; see [PERFORMANCE.md](PERFORMANCE.md).
 - **Factory Mode offers tools its capability table forbids:** `GameModeCapabilities` declares
   `creative_paint`, `creative_erase` and `world_edit` Creative-only, Factory Mode runs
@@ -28,6 +54,30 @@ None known after the Phase 13.9 verification gate.
   `7.52`-`7.68 ms`. Deliberately not relaxed: either the fluid pass earns real headroom or the
   gate is restated as a distribution rather than a single average, and both are owner calls.
 - **Manual playtest coverage:** automated captures and state assertions cannot establish subjective controls, readability, audio balance or fun. The owner checklist remains required.
+
+## Fixed in the alpha release audit
+
+- **An exception inside the simulation took the whole process down silently.** C++ that throws
+  through a GDExtension boundary calls `std::terminate`: no engine error, no line in
+  `user://logs/godot.log`, no crash dialog, and nothing for a player to report -- the window is
+  simply gone, which is exactly what the New Game crash looked like. `step()` now catches,
+  records the reason and the tick, pushes it to Godot's error stream so it reaches the log, and
+  refuses to run again instead of retrying a fault that would bury its own first message. The
+  game freezes the clock, says the world is safe, and writes the diagnostics archive without
+  waiting to be asked. `tests/fault_guard.gd` injects a throw and asserts the process survives
+  it; the eighty-nine remaining `.at()` call sites are no longer a silent-death risk.
+- **The window could be resized until the game was unusable.** No minimum was set, and the top
+  and bottom bars alone occupy 160px of the 1280x720 layout that the responsive tests cover.
+  The window will now not go below that.
+- **The build shipped the default Godot icon**, in the taskbar, the window and the executable.
+- **Three research nodes and two objectives promised machines that cannot be built.** Same cause
+  as the second objective, in the surface where a player decides how to spend a scarce resource:
+  "Unlock Vibrating Screen", "Unlock Overbelt Magnetic Separator", "Unlock Wash Sluice" and a
+  Foundation summary naming a Furnace, plus objectives three and six sending the player to the
+  Vibrating Screen and the Wash Sluice. Each now names what the research actually unlocks and
+  the plan that builds it, and both routes were run in the simulation first: a Vibration
+  Actuator beside a Mesh Screen fractionates Raw Sand, and a Riffle with Water beside it
+  processes grains while the same Riffle without Water does nothing.
 
 ## Fixed in the first run pass
 

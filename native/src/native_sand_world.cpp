@@ -8,7 +8,9 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <exception>
 #include <limits>
+#include <stdexcept>
 
 namespace godot {
 
@@ -254,6 +256,9 @@ void NativeSandWorld::_bind_methods() {
     ClassDB::bind_method(D_METHOD("allocate_chunk_rect", "chunk_area"), &NativeSandWorld::allocate_chunk_rect);
     ClassDB::bind_method(D_METHOD("finalize_initialization"), &NativeSandWorld::finalize_initialization);
     ClassDB::bind_method(D_METHOD("step"), &NativeSandWorld::step);
+    ClassDB::bind_method(D_METHOD("inject_step_fault_for_test"), &NativeSandWorld::inject_step_fault_for_test);
+    ClassDB::bind_method(D_METHOD("is_faulted"), &NativeSandWorld::is_faulted);
+    ClassDB::bind_method(D_METHOD("get_fault_message"), &NativeSandWorld::get_fault_message);
     ClassDB::bind_method(D_METHOD("chunk_count"), &NativeSandWorld::chunk_count);
     ClassDB::bind_method(D_METHOD("active_chunk_count"), &NativeSandWorld::active_chunk_count);
     ClassDB::bind_method(D_METHOD("sleeping_chunk_count"), &NativeSandWorld::sleeping_chunk_count);
@@ -502,6 +507,10 @@ void NativeSandWorld::_bind_methods() {
 // One list, called from both, is the only version of this that stays correct as subsystems
 // are added.
 void NativeSandWorld::clear_world_state() {
+    // Starting a fresh world is the one recovery a faulted simulation gets.
+    faulted_ = false;
+    fault_message_ = String();
+    inject_fault_for_test_ = false;
     chunks_.clear();
     tick_index_ = 0;
     last_movements_ = 0;
@@ -1721,7 +1730,51 @@ void NativeSandWorld::release_redundant_liquid_planes() {
     }
 }
 
+// The only place an exception can leave the simulation and reach Godot.
+//
+// C++ that throws through a GDExtension boundary calls std::terminate: the process vanishes
+// without an engine error, a log line or a crash dialog, so a player sees nothing but a closed
+// window and has nothing to send back. The registries this tick walks are keyed by ids written
+// by fifteen different subsystems, and one stale id is all it takes. Record the reason, tell
+// Godot's error stream so it reaches user://logs/godot.log, and stop simulating -- a frozen
+// world the player can still read, save and report beats a process that is simply gone.
 int32_t NativeSandWorld::step() {
+    if (faulted_) return 0;
+    try {
+        return step_simulation();
+    } catch (const std::exception &error) {
+        enter_fault("step", error.what());
+    } catch (...) {
+        enter_fault("step", "unknown exception");
+    }
+    return 0;
+}
+
+void NativeSandWorld::inject_step_fault_for_test() {
+    inject_fault_for_test_ = true;
+}
+
+void NativeSandWorld::enter_fault(const char *stage, const char *detail) {
+    faulted_ = true;
+    fault_message_ = String("Simulation stopped in ") + String(stage) + String(": ") + String(detail) +
+        String(" (tick ") + String::num_int64(static_cast<int64_t>(tick_index_)) + String(")");
+    UtilityFunctions::push_error(fault_message_);
+}
+
+bool NativeSandWorld::is_faulted() const {
+    return faulted_;
+}
+
+String NativeSandWorld::get_fault_message() const {
+    return fault_message_;
+}
+
+int32_t NativeSandWorld::step_simulation() {
+    // The guard above is only worth having if it is exercised; this is how the test throws.
+    if (inject_fault_for_test_) {
+        inject_fault_for_test_ = false;
+        throw std::runtime_error("injected simulation fault");
+    }
     last_screen_passes_ = 0;
     last_thermal_source_energy_ = 0;
     last_gas_active_ = last_gas_visited_ = last_gas_transfers_ = last_gas_mass_transferred_ = last_gas_usec_ = 0;
@@ -2737,13 +2790,13 @@ const std::vector<NativeSandWorld::StructureDefinition> &NativeSandWorld::struct
 
 const std::vector<NativeSandWorld::ResearchDefinition> &NativeSandWorld::research_definitions() {
     static const std::vector<ResearchDefinition> definitions{
-        {"foundation.basic_industry", "Foundation", "Primitive logistics, Research Bank, Furnace and Harvest.", {}, 0, 0, 0, "Starting industrial toolkit", 2, 0},
+        {"foundation.basic_industry", "Foundation", "Primitive logistics, the Research Bank, Structural Walls and Harvest.", {}, 0, 0, 0, "Starting industrial toolkit", 2, 0},
         {"mobility.sprint", "Sprint", "Early character mobility without stamina or survival upkeep.", {"foundation.basic_industry"}, 600, 10, 0, "Unlock Sprint", 1, 1},
         {"mobility.hover", "Hover / Precision Flight", "Stabilize the Basic Jetpack for precise mid-air factory construction.", {"mobility.sprint", "automation.basic_sensing"}, 1800, 90, 1, "Unlock Hover toggle", 1, 2},
-        {"processing.dry_separation", "Dry Separation", "Physically screen Raw Sand by stable grain size.", {"foundation.basic_industry"}, 2400, 40, 0, "Unlock Vibrating Screen", 0, 1},
+        {"processing.dry_separation", "Dry Separation", "Physically screen Raw Sand by stable grain size.", {"foundation.basic_industry"}, 2400, 40, 0, "Unlock Mesh Screen and Vibration Actuator", 0, 1},
         {"logistics.belt_drive_1", "Belt Drive I", "Double Basic Conveyor transfer cadence.", {"foundation.basic_industry"}, 1000, 25, 0, "Belts: 1 cell/tick", 2, 1},
         {"furnace.fuel_economy_1", "Thermal Efficiency I", "Reduce distance-based heat loss across the open radiant bay.", {"foundation.basic_industry"}, 1200, 30, 0, "Heat attenuation: 450 to 325 per cell", 4, 1},
-        {"processing.ferrous_separation", "Ferrous Separation", "Lift susceptible grains from a moving physical stream.", {"processing.dry_separation"}, 3000, 180, 0, "Unlock Overbelt Magnetic Separator", 0, 2},
+        {"processing.ferrous_separation", "Ferrous Separation", "Lift susceptible grains from a moving physical stream.", {"processing.dry_separation"}, 3000, 180, 0, "Unlock Electromagnet and Metal Plate", 0, 2},
         {"furnace.throughput_1", "Radiant Intensity I", "Increase physical heat flux into exposed moving material.", {"furnace.fuel_economy_1"}, 2200, 80, 0, "Radiant field strength: 2500 to 3000", 4, 2},
         {"logistics.high_throughput_handling", "High-Throughput Handling", "Improve capture transport and physical feed handling.", {"processing.dry_separation", "logistics.belt_drive_1"}, 3500, 180, 0, "Overbelt capture cadence", 2, 3},
         {"processing.precision_screening", "Precision Screening", "Refine physical deck aperture and screening opportunity.", {"processing.ferrous_separation"}, 4000, 250, 1, "Screen aperture: precision_1", 0, 3},
@@ -2756,7 +2809,7 @@ const std::vector<NativeSandWorld::ResearchDefinition> &NativeSandWorld::researc
         {"fluid.basic_handling", "Basic Fluid Handling", "Local enclosed Water transport with physical world boundaries.", {"processing.dry_separation", "logistics.belt_drive_1"}, 2600, 120, 0, "Unlock Pipe, Intake, Outlet, Pump and Reservoir Wall", 9, 2},
         {"fluid.pressurized_transport", "Pressurized Transport", "Higher finite pump rate and head for long lifts.", {"fluid.basic_handling"}, 2200, 180, 0, "Pump head 8192 to 12288; rate 4096 to 6144", 9, 3},
         {"fluid.flow_control", "Flow Control", "Signal-controlled valves and local pipe telemetry.", {"fluid.basic_handling", "automation.basic_sensing"}, 2400, 160, 0, "Unlock Pipe Valve, Flow Meter and Pipe Fill Sensor", 8, 4},
-        {"processing.wet_separation", "Wet Separation", "Use real flowing Water, gravity and riffles to classify grains.", {"processing.dry_separation", "fluid.basic_handling"}, 3600, 240, 0, "Unlock Wash Sluice", 10, 4},
+        {"processing.wet_separation", "Wet Separation", "Use real flowing Water, gravity and riffles to classify grains.", {"processing.dry_separation", "fluid.basic_handling"}, 3600, 240, 0, "Unlock Riffle", 10, 4},
         {"logistics.subsurface_1", "Subsurface Logistics I", "One finite hidden lane below the factory floor.", {"foundation.basic_industry"}, 700, 20, 0, "Unlock Amber channel I", 3, 1},
         {"logistics.subsurface_2", "Subsurface Logistics II", "A second independent lane can cross depth I.", {"logistics.subsurface_1"}, 1800, 80, 0, "Unlock Cyan channel II", 3, 2},
         {"logistics.subsurface_3", "Subsurface Logistics III", "A third independent lane for dense factories.", {"logistics.subsurface_2"}, 3600, 180, 1, "Unlock Violet channel III", 3, 3},

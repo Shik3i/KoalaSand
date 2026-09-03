@@ -25,13 +25,13 @@ const MILESTONE_OBJECTIVES: Array[Dictionary] = [
 	{"key": "first_research_deposit", "title": "Deposit into a Research Bank", "help": "concept:research",
 		"criteria": ["A Research Bank takes only Glass, Iron or Gold", "Place the Basic Furnace plan and heat Raw Sand inside it", "Most of each grain is residue · run plenty through"]},
 	{"key": "first_concentrate", "title": "Separate by physical properties", "help": "concept:screening",
-		"criteria": ["Research Dry Separation to unlock the Vibrating Screen", "Feed it Raw Sand", "Collect the fractions it drops"]},
+		"criteria": ["Research Dry Separation · it unlocks a Mesh Screen and a Vibration Actuator", "Place the Basic Screen plan · the Actuator must touch the Mesh", "Drop Raw Sand onto the Mesh and collect what falls out"]},
 	{"key": "first_iron", "title": "Recover Iron", "help": "concept:screening",
 		"criteria": ["Concentrate the ferrous fraction", "Deposit Iron in a Research Bank"]},
 	{"key": "first_gold", "title": "Recover Gold", "help": "concept:screening",
 		"criteria": ["Gold is dense and rare", "Separate it by density, then deposit it"]},
 	{"key": "water_processing", "title": "Process with water", "help": "concept:wet_separation",
-		"criteria": ["Route Water to a Wash Sluice", "Run grains through it"]},
+		"criteria": ["Research Wet Separation · it unlocks the Riffle", "Place the Basic Wet Sluice plan and fill the channel with Water", "Riffles only work with Water beside them · run grains over one"]},
 	{"key": "automation", "title": "Build Automation", "help": "concept:automation",
 		"criteria": ["Place a sensor and an actuator", "Wire the output to the input"]},
 	{"key": "steam", "title": "Produce Steam", "help": "concept:heat",
@@ -219,6 +219,7 @@ var _blueprint_panel: BlueprintLibraryPanel
 var _audio_mixer: AudioEventMixer
 var _feedback_renderer: PhysicalFeedbackRenderer
 var _diagnostics_exporter := DiagnosticsExporter.new()
+var _simulation_faulted := false
 var _planning_paused := false
 var _pause_menu_was_planning := false
 var _last_milestones: Dictionary = {}
@@ -233,6 +234,10 @@ func _ready() -> void:
 		get_tree().quit(1)
 		return
 	_parse_capture_arguments()
+	# 1280x720 is the smallest layout the responsive tests cover, and the top and bottom bars
+	# alone are 160px of it. Dragging the window below that leaves no world to look at and
+	# overlaps HUD that was never measured there, so the window will not go smaller.
+	DisplayServer.window_set_min_size(Vector2i(1280, 720))
 	_game_session.apply_preset(_phase11_preset_for_view())
 	_alert_manager.alert_emitted.connect(_on_factory_alert)
 	_alert_manager.focus_requested.connect(_focus_world_cell)
@@ -372,6 +377,9 @@ func _process(delta: float) -> void:
 			_maintain_progression_bank_feeds()
 		var simulation_start := Time.get_ticks_usec()
 		world.step()
+		if not _simulation_faulted and world.is_faulted():
+			_handle_simulation_fault()
+			break
 		if _runtime_benchmark_started:
 			var phase9_thermal: Dictionary = world.get_thermal_statistics()
 			var phase9_gas: Dictionary = world.get_gas_statistics()
@@ -2400,6 +2408,7 @@ func _start_phase11_game(preset_id: int, seed: int, world_name: String) -> void:
 	_world_name = world_name
 	_playtime_seconds = 0.0
 	_autosave_elapsed = 0.0
+	_simulation_faulted = false
 	_player_session_active = true
 	_phase11_view = ["factory-mode", "character-spawn", "creative-mode"][preset_id]
 	if _new_game_screen != null:
@@ -2584,6 +2593,26 @@ func _pipette_at_cursor() -> void:
 	_select_structure(int(copied.type_id))
 	factory_hud.show_notification("Pipette: %s" % str(ComponentPresentation.describe(int(copied.type_id), _structure_definitions.get(int(copied.type_id), {})).name))
 
+# The simulation caught something it cannot continue past.
+#
+# Before the guard in step() this took the whole process down with it, so the player saw the
+# window vanish and had nothing to send. Now the world is intact but frozen: stop the clock so
+# nothing else is touched, say plainly what happened and that the save is still good, and write
+# the diagnostics archive without waiting to be asked -- the player who hits this is exactly the
+# player who will not think to go looking for the export button.
+func _handle_simulation_fault() -> void:
+	_simulation_faulted = true
+	clock.speed_multiplier = 0.0
+	var reason: String = str(world.get_fault_message())
+	push_error("KoalaSand simulation fault: " + reason)
+	if factory_hud != null:
+		factory_hud.show_notification("Simulation stopped - your world is safe, saving a report")
+	_export_diagnostics()
+	if factory_hud != null:
+		factory_hud.show_notification(reason)
+	if _audio_mixer != null: _audio_mixer.play_ui(&"save_error")
+
+
 func _export_diagnostics() -> void:
 	var performance := {"simulation_latest_ms":_simulation_latest_ms, "render_ms":renderer.last_update_ms, "hud_ms":factory_hud.last_update_ms, "audio":_audio_mixer.statistics() if _audio_mixer != null else {}, "vfx_ms":_feedback_renderer.last_update_ms if _feedback_renderer != null else 0.0}
 	var result := _diagnostics_exporter.export_report(world, _pause_menu.settings() if _pause_menu != null else {}, performance, [])
@@ -2700,6 +2729,7 @@ func _continue_world(saved_world_name: String) -> void:
 	_world_seed = int(restored.metadata.get("seed", _world_seed))
 	_playtime_seconds = float(context.get("playtime_seconds", 0))
 	_autosave_elapsed = 0.0
+	_simulation_faulted = false
 	_player_session_active = true
 	if context.get("blueprints", null) is PackedByteArray:
 		_blueprints.deserialize_state(context.blueprints)
@@ -3820,15 +3850,18 @@ func _update_status() -> void:
 		minimal_label.text += "\n" + _unlock_notice
 	var progression: Dictionary = world.get_progression_state()
 	reserve_label.text = "GLASS %d   IRON %d   GOLD %d" % [progression.glass, progression.iron, progression.gold]
-	var toolbar := $HUD/BuildToolbar/Margin/Tools
-	var sieve_label := "[V] Sieve" if world.is_structure_unlocked(6) else "[V] LOCKED · Dry Separation"
-	var magnetic_label := "[M] Magnetic" if world.is_structure_unlocked(7) else "[M] LOCKED · Ferrous Separation"
-	# Assigning a Button.text re-runs its layout even when the string is identical, and these
-	# two change once per playthrough at most.
-	var sieve_button := toolbar.get_node("Sieve")
-	if sieve_button.text != sieve_label: sieve_button.text = sieve_label
-	var magnetic_button := toolbar.get_node("Magnetic")
-	if magnetic_button.text != magnetic_label: magnetic_button.text = magnetic_label
+	# The legacy build toolbar is not part of this UI: the scene ships it hidden and nothing
+	# ever shows it. Its two research labels were still being re-derived on every status update.
+	if $HUD/BuildToolbar.visible:
+		var toolbar := $HUD/BuildToolbar/Margin/Tools
+		var sieve_label := "[V] Sieve" if world.is_structure_unlocked(6) else "[V] LOCKED · Dry Separation"
+		var magnetic_label := "[M] Magnetic" if world.is_structure_unlocked(7) else "[M] LOCKED · Ferrous Separation"
+		# Assigning a Button.text re-runs its layout even when the string is identical, and
+		# these two change once per playthrough at most.
+		var sieve_button := toolbar.get_node("Sieve")
+		if sieve_button.text != sieve_label: sieve_button.text = sieve_label
+		var magnetic_button := toolbar.get_node("Magnetic")
+		if magnetic_button.text != magnetic_label: magnetic_button.text = magnetic_label
 
 	# The diagnostics panel is a developer overlay, hidden unless it is switched on. Everything
 	# below reads a dozen native statistics dictionaries and then assigns to a Label about

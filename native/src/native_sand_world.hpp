@@ -62,6 +62,9 @@ public:
     int32_t allocate_chunk_rect(Rect2i chunk_area);
     void finalize_initialization();
     int32_t step();
+    bool is_faulted() const;
+    String get_fault_message() const;
+    void inject_step_fault_for_test();
 
     int32_t chunk_count() const;
     int32_t active_chunk_count() const;
@@ -314,6 +317,16 @@ protected:
     static void _bind_methods();
 
 private:
+    // A GDExtension that lets an exception escape into Godot calls std::terminate: the process
+    // disappears with no engine error, no log line and no crash dialog, which is exactly what a
+    // player would report as "the window just closed". step() therefore catches, records why,
+    // and refuses to run again rather than taking the game down with it.
+    int32_t step_simulation();
+    void enter_fault(const char *stage, const char *detail);
+    bool faulted_ = false;
+    bool inject_fault_for_test_ = false;
+    String fault_message_;
+
     struct Bounds {
         int16_t min_x = CHUNK_SIZE;
         int16_t min_y = CHUNK_SIZE;
