@@ -212,6 +212,20 @@ step — and asserts the matter travels and the milestone is reached. It drops f
 purpose: painting into the adjacent cell would pass through the `set_cell()` path and prove
 nothing.
 
+## 10. The guidance now has to be true
+
+Criteria that describe the simulation are promises about it, so the ones that make a checkable
+claim are checked against it.
+
+The second objective used to say "Route processed matter into it", which is true and useless: a
+Research Bank accepts **only** Glass, Iron or Gold, and the only route to Glass at that point is
+a Furnace that needs harvested Coal as fuel. It now says so, and `tests/build_flow.gd` offers the
+Bank a Glass cell and a Raw Sand cell and asserts it takes the first and refuses the second.
+
+The third objective said "Build a screening or separation Component" without mentioning that the
+Vibrating Screen is behind Dry Separation research, which is the thing actually standing between
+the player and the milestone. It says that now.
+
 ---
 
 ## Verification
@@ -223,7 +237,7 @@ refusal said nothing.
 
 | | Result |
 | --- | --- |
-| `tests/build_flow.gd` | 74 checks |
+| `tests/build_flow.gd` | 80 checks |
 | `scripts/test.ps1` | `TEST_SUITE_PASS scripts=35` |
 | `tests/phase139_ftue.gd` | 329 checks |
 | `tests/phase139b_layout.gd` | 237 checks |

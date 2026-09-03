@@ -11,6 +11,10 @@ var checks := 0
 var failures: Array[String] = []
 
 const CONVEYOR_RIGHT := 2
+const RESEARCH_BANK := 8
+const EMPTY_MATERIAL := 0
+const SAND := 2
+const GLASS := 10
 
 class Harness extends Node:
 	var scene: Node
@@ -51,6 +55,7 @@ func _run(scene: Node) -> void:
 	_test_reaching_a_milestone_is_announced(scene)
 	_test_experiments_that_claim_to_be_reachable_are(scene)
 	_test_the_first_instruction_actually_works(scene)
+	_test_the_second_instruction_tells_the_truth(scene)
 	if failures.is_empty():
 		print("PASS: %d build flow checks" % checks)
 		quit(0)
@@ -326,6 +331,35 @@ func _test_the_first_instruction_actually_works(scene: Node) -> void:
 	_check(moved, "the matter travels once it lands on the Conveyor")
 	_check(bool(world.get_milestone_state().get("first_material_flow", false)),
 		"following the first instruction reaches the milestone it is attached to")
+
+
+func _test_the_second_instruction_tells_the_truth(scene: Node) -> void:
+	# The second objective says "A Research Bank takes only Glass, Iron or Gold". A guidance
+	# line is a promise about the simulation, so it gets checked against the simulation: the
+	# Bank must take Glass and must not take Raw Sand.
+	var world: Variant = scene.get("world")
+	world.set_game_mode(1)
+	var definition := {}
+	for entry: Dictionary in world.get_structure_definitions():
+		if int(entry.get("type_id", 0)) == RESEARCH_BANK: definition = entry; break
+	_check(not definition.is_empty(), "the Research Bank definition is available")
+	if definition.is_empty(): return
+	var inputs: Array = definition.get("input_ports", [])
+	_check(not inputs.is_empty(), "the Research Bank has an input port")
+	if inputs.is_empty(): return
+
+	for probe in [{"material": GLASS, "accepted": true}, {"material": SAND, "accepted": false}]:
+		var origin := Vector2i(600 + 40 * int(probe.material), 300)
+		# Clear room, place the Bank, and offer one cell at its input port.
+		world.paint_stroke(origin - Vector2i(4, 4), origin + Vector2i(24, 16), 6, EMPTY_MATERIAL)
+		_check(int(world.place_structure(RESEARCH_BANK, origin, 0)) > 0,
+			"a Research Bank can be placed to test material %d" % int(probe.material))
+		var before := int(world.get_bank_statistics().get("accepted_total", 0))
+		world.set_cell(origin + Vector2i(inputs[0]), int(probe.material))
+		for _tick in range(120): world.step()
+		var accepted := int(world.get_bank_statistics().get("accepted_total", 0)) > before
+		_equal(accepted, bool(probe.accepted),
+			"the Research Bank %s material %d, as the objective says" % ["takes" if probe.accepted else "refuses", int(probe.material)])
 
 
 func _scripts_under(root: String) -> Array[String]:
