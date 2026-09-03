@@ -237,6 +237,25 @@ The third objective said "Build a screening or separation Component" without men
 Vibrating Screen is behind Dry Separation research, which is the thing actually standing between
 the player and the milestone. It says that now.
 
+The second objective took two attempts to get right, and the first attempt is worth recording
+because the obvious reading of this codebase is wrong. `get_structure_definitions()` lists a
+"Radiant Crude Furnace", it is unlocked from the start, and the machine loop contains a furnace
+branch — so "melt Raw Sand in a Furnace" looks correct and I wrote it. It is not: the Furnace,
+Vibrating Screen, Magnetic Separator and Wash Sluice are `DEV_TYPES`, deliberately excluded from
+the Build Catalog, and `COMPOSABLE_PROCESSING.md` says exactly why — they are replaced by
+geometry. `is_processing_machine()` returns true only for the Research Bank, so that furnace
+branch is dead code.
+
+The real route is a **Refractory Wall** beside Raw Sand hot enough to react, which is what the
+`Basic Furnace` plan in the Blueprint library builds out of catalog components. Running it
+confirms the mechanic, and also that a single grain usually yields Crude Residue rather than
+Glass, because the useful fraction depends on the grain's composition. The criterion says that
+too, because a player who melts one cell of sand and gets residue would otherwise conclude the
+game is broken.
+
+`tests/build_flow.gd` now checks both halves: that the plan the objective names exists in the
+library, and that hot Raw Sand beside Refractory geometry actually fractionates.
+
 ## 11. There was no discoverable way to dig
 
 Refusing a placement with "That space is solid · dig it out first" is only honest if there is a
@@ -273,7 +292,7 @@ refusal said nothing.
 
 | | Result |
 | --- | --- |
-| `tests/build_flow.gd` | 86 checks |
+| `tests/build_flow.gd` | 89 checks |
 | `scripts/test.ps1` | `TEST_SUITE_PASS scripts=35` |
 | `tests/phase139_ftue.gd` | 329 checks |
 | `tests/phase139b_layout.gd` | 237 checks |

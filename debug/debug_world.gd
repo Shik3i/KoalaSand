@@ -23,7 +23,7 @@ const MILESTONE_OBJECTIVES: Array[Dictionary] = [
 	{"key": "first_material_flow", "title": "Move physical material", "help": "concept:construction",
 		"criteria": ["Place a Conveyor in open air above the ground", "Drop matter onto it", "Watch it travel"]},
 	{"key": "first_research_deposit", "title": "Deposit into a Research Bank", "help": "concept:research",
-		"criteria": ["A Research Bank takes only Glass, Iron or Gold", "Melt Raw Sand in a Furnace, fuelled by harvested Coal", "Route what it emits into the Bank"]},
+		"criteria": ["A Research Bank takes only Glass, Iron or Gold", "Place the Basic Furnace plan and heat Raw Sand inside it", "Most of each grain is residue · run plenty through"]},
 	{"key": "first_concentrate", "title": "Separate by physical properties", "help": "concept:screening",
 		"criteria": ["Research Dry Separation to unlock the Vibrating Screen", "Feed it Raw Sand", "Collect the fractions it drops"]},
 	{"key": "first_iron", "title": "Recover Iron", "help": "concept:screening",

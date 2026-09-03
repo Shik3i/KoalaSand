@@ -15,6 +15,8 @@ const RESEARCH_BANK := 8
 const EMPTY_MATERIAL := 0
 const SAND := 2
 const GLASS := 10
+const REFRACTORY_WALL := 40
+const REACTION_TEMPERATURE := 5893
 
 class Harness extends Node:
 	var scene: Node
@@ -57,6 +59,7 @@ func _run(scene: Node) -> void:
 	_test_the_first_instruction_actually_works(scene)
 	_test_the_second_instruction_tells_the_truth(scene)
 	_test_the_advice_to_dig_it_out_can_be_followed(scene)
+	_test_the_route_to_glass_exists_and_works(scene)
 	if failures.is_empty():
 		print("PASS: %d build flow checks" % checks)
 		quit(0)
@@ -388,6 +391,39 @@ func _test_the_advice_to_dig_it_out_can_be_followed(scene: Node) -> void:
 	scene.call("_paint_line", solid, solid)
 	_equal(int(world.get_cell(solid)), 0, "following the advice clears the cell")
 	scene.set("_painting", false)
+
+
+func _test_the_route_to_glass_exists_and_works(scene: Node) -> void:
+	# The second objective sends the player to the Basic Furnace plan and to heating Raw Sand
+	# inside it. Both halves are checked, because the obvious reading of the game is wrong: the
+	# Radiant Crude Furnace is a dev fixture, deliberately excluded from the catalog, and
+	# processing is composable geometry instead. Refractory Wall next to hot sand is the actual
+	# mechanic, and it is easy to write an instruction that names a machine that does not exist.
+	var blueprints: Variant = scene.get("_blueprints")
+	_check(blueprints.load_blueprint("basic_furnace") != null,
+		"the Basic Furnace plan the objective names is in the library")
+
+	var world: Variant = scene.get("world")
+	world.set_game_mode(1)
+	var origin := Vector2i(900, 300)
+	world.paint_stroke(origin - Vector2i(12, 12), origin + Vector2i(12, 8), 12, EMPTY_MATERIAL)
+	for x in range(origin.x - 12, origin.x + 13):
+		world.set_cell(Vector2i(x, origin.y + 4), 1)
+	var wall := Vector2i(origin.x, origin.y + 3)
+	_check(int(world.place_structure(REFRACTORY_WALL, wall, 0)) > 0, "a Refractory Wall can be placed")
+
+	# Hot enough to react, set directly so the thing under test is the mechanic rather than a
+	# hand-tuned fire.
+	for offset in [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1)]:
+		world.set_material_state(wall + offset, SAND, 255, REACTION_TEMPERATURE + 400, 0, 0)
+	var changed := false
+	for _block in range(12):
+		for _tick in range(30): world.step()
+		for offset in [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1)]:
+			var material := int(world.get_cell(wall + offset))
+			if material != SAND and material != EMPTY_MATERIAL: changed = true
+		if changed: break
+	_check(changed, "Raw Sand heated past the reaction temperature beside Refractory geometry fractionates")
 
 
 func _scripts_under(root: String) -> Array[String]:
