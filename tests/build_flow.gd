@@ -46,6 +46,7 @@ func _run(scene: Node) -> void:
 	_test_conveyor_places_where_the_preview_says_it_can(scene)
 	_test_placing_on_solid_ground_says_why(scene)
 	_test_a_refused_placement_says_why(scene)
+	_test_the_objective_tracks_the_simulation(scene)
 	if failures.is_empty():
 		print("PASS: %d build flow checks" % checks)
 		quit(0)
@@ -151,6 +152,35 @@ func _test_a_refused_placement_says_why(scene: Node) -> void:
 		"a refused placement tells the player why")
 	_check("range" in hud.last_notification().to_lower(),
 		"and names the reason it can act on: %s" % hud.last_notification())
+
+
+func _test_the_objective_tracks_the_simulation(scene: Node) -> void:
+	# The objective was driven by a list of milestone keys kept by hand alongside the list
+	# native actually publishes. Seven of the ten had drifted, the first one included, so the
+	# lookup always missed and the objective never moved off step one for the whole game.
+	# Names crossing a language boundary need a test or they rot silently.
+	var world: Variant = scene.get("world")
+	var published: Dictionary = world.get_milestone_state()
+	var objectives: Array = scene.get("MILESTONE_OBJECTIVES")
+	_check(not objectives.is_empty(), "the objective table is populated")
+	for step: Dictionary in objectives:
+		_check(published.has(str(step.key)),
+			"milestone key '%s' is one the simulation publishes" % str(step.key))
+		_check(not str(step.title).is_empty(), "'%s' has a title" % str(step.key))
+		_check((step.criteria as Array).size() > 0, "'%s' says what to actually do" % str(step.key))
+	_equal(objectives.size(), published.size(),
+		"every published milestone has an objective, and none is invented")
+
+	# And the objective the player is shown has to be the first unmet one, not a fixed string.
+	var hud: Variant = scene.get("factory_hud")
+	scene.call("_update_phase135_feedback")
+	var shown: String = str(hud.get("_goal_title").text)
+	var expected := ""
+	for step: Dictionary in objectives:
+		if not bool(published.get(str(step.key), false)):
+			expected = str(step.title)
+			break
+	_equal(shown, expected, "the objective shown is the first unmet milestone")
 
 
 func _check(condition: bool, label: String) -> void:

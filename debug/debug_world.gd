@@ -8,6 +8,40 @@ const MAX_STROKE_POINTS := 512
 # The build validator already knows exactly why a placement is impossible. These turn its
 # reasons into something a player can act on, because the alternative -- what the game did
 # before -- was to refuse in complete silence and look broken.
+# The objective the player is working towards, in the order the simulation actually unlocks it.
+#
+# This used to be two parallel arrays of keys and labels that had to agree with a third list of
+# keys inside native. They did not: seven of the ten keys were wrong, starting with the very
+# first one, so the lookup always missed, the loop always broke on step one, and the objective
+# read "Move physical material" forever no matter how far the player got. Keys, titles and
+# criteria now travel together, and tests/build_flow.gd asserts every key here exists in
+# get_milestone_state().
+#
+# The criteria are what the simulation actually measures, not a mood. "Build · Observe ·
+# Improve" was on every step and told nobody anything.
+const MILESTONE_OBJECTIVES: Array[Dictionary] = [
+	{"key": "first_material_flow", "title": "Move physical material", "help": "concept:construction",
+		"criteria": ["Place a Conveyor in open air above the ground", "Drop matter onto it", "Watch it travel"]},
+	{"key": "first_research_deposit", "title": "Deposit into a Research Bank", "help": "concept:research",
+		"criteria": ["Build a Research Bank", "Route processed matter into it"]},
+	{"key": "first_concentrate", "title": "Separate by physical properties", "help": "concept:separation",
+		"criteria": ["Build a screening or separation Component", "Feed it mixed matter", "Collect what falls out"]},
+	{"key": "first_iron", "title": "Recover Iron", "help": "concept:separation",
+		"criteria": ["Concentrate the ferrous fraction", "Deposit Iron in a Research Bank"]},
+	{"key": "first_gold", "title": "Recover Gold", "help": "concept:separation",
+		"criteria": ["Gold is dense and rare", "Separate it by density, then deposit it"]},
+	{"key": "water_processing", "title": "Process with water", "help": "concept:wet_processing",
+		"criteria": ["Route Water to a Wash Sluice", "Run grains through it"]},
+	{"key": "automation", "title": "Build Automation", "help": "concept:automation",
+		"criteria": ["Place a sensor and an actuator", "Wire the output to the input"]},
+	{"key": "steam", "title": "Produce Steam", "help": "concept:thermal",
+		"criteria": ["Heat contained Water past boiling", "Capture the Steam in Pipes"]},
+	{"key": "electricity", "title": "Generate Power", "help": "concept:power",
+		"criteria": ["Drive a Turbine with Steam", "Turn a shaft into a Generator"]},
+	{"key": "powered_factory_established", "title": "Establish a Powered Factory", "help": "concept:power",
+		"criteria": ["Produce more power than you consume", "Keep Iron and Gold flowing", "Research Electrified Industry"]},
+]
+
 const BUILD_REFUSAL_TEXT := {
 	"OUT_OF_RANGE": "Out of build range · move closer",
 	"UNKNOWN_AREA": "You have not explored that area yet",
@@ -2572,11 +2606,11 @@ func _update_phase135_feedback() -> void:
 			factory_hud.show_notification("Experiment complete: %s" % experiment_id.replace("_", " ").capitalize())
 			_audio_mixer.play_ui(&"milestone_complete")
 	var milestones: Dictionary = world.get_milestone_state()
-	var order := ["first_material_moved", "first_separation", "first_iron", "first_gold", "first_automation", "first_water", "first_steam", "first_power", "stable_power", "powered_factory_established"]
-	var labels := ["Move physical material", "Separate by physical properties", "Recover Iron", "Recover Gold", "Build Automation", "Route Water", "Produce Steam", "Generate Power", "Stabilize the grid", "Establish a Powered Factory"]
-	for index in order.size():
-		if not bool(milestones.get(order[index], false)):
-			factory_hud.set_current_goal(labels[index], ["Build", "Observe", "Improve"])
+	for step: Dictionary in MILESTONE_OBJECTIVES:
+		if not bool(milestones.get(str(step.key), false)):
+			var criteria: Array[String] = []
+			for line: Variant in step.criteria: criteria.append(str(line))
+			factory_hud.set_current_goal(str(step.title), criteria, str(step.help))
 			break
 	_last_milestones = milestones
 

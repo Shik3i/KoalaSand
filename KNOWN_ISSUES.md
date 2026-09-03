@@ -30,6 +30,10 @@ None known after the Phase 13.9 verification gate.
 - **Nothing the game says was on screen:** the objective, the progress criteria, the mode's
   opening hint and the Codex link all lived in a popup that started closed behind an
   unmarked chip in the top bar.
+- **The objective never advanced:** the milestone keys the UI looked up had drifted from the
+  ones the simulation publishes, and the first key was among them, so the objective read "Move
+  physical material" for the entire game regardless of progress. Its criteria were also the same
+  three generic words on every step.
 - **The first quickbar page was mostly locked:** six of ten entries were Pipe components a new
   Factory player cannot build.
 - **Subsurface Channels claimed to be unlocked:** their catalog entry never set a locked flag

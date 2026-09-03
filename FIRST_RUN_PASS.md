@@ -89,6 +89,42 @@ While checking that, one entry turned out to be lying: Subsurface Channels are g
 available, sat on the first page after the reordering, and would have refused in silence. The
 unlock rule already existed in native and only needed exposing.
 
+## 5. The objective never moved, for the whole game
+
+The objective in the top bar is meant to walk the player through the arc: move material,
+deposit into a Research Bank, separate by physical properties, recover Iron, and so on. It is
+driven by a list of milestone keys held in `debug_world.gd` alongside the list native actually
+publishes from `get_milestone_state()`.
+
+Seven of the ten keys had drifted apart:
+
+| The UI looked for | The simulation publishes |
+| --- | --- |
+| `first_material_moved` | `first_material_flow` |
+| `first_separation` | `first_research_deposit` |
+| — | `first_concentrate` |
+| `first_automation` | `automation` |
+| `first_water` | `water_processing` |
+| `first_steam` | `steam` |
+| `first_power` | `electricity` |
+| `stable_power` | — |
+
+The loop stops at the first unmet milestone, and the very first key was wrong, so the lookup
+always missed, the loop always broke on step one, and the objective read **Move physical
+material** forever no matter how far the player got. Nothing the player did was ever
+acknowledged.
+
+Keys, titles and criteria now travel together in one table, and `tests/build_flow.gd` asserts
+every key in it is one the simulation publishes and that the count matches exactly. Reintroducing
+a single drifted key fails that check.
+
+The criteria were also `Build · Observe · Improve` on every step, which says nothing. They now
+describe what the simulation actually measures — and the first one is the rule that was costing
+the owner the most:
+
+> **Move physical material**
+> Place a Conveyor in open air above the ground · Drop matter onto it · Watch it travel
+
 ---
 
 ## Verification
@@ -100,7 +136,7 @@ refusal said nothing.
 
 | | Result |
 | --- | --- |
-| `tests/build_flow.gd` | 16 checks |
+| `tests/build_flow.gd` | 49 checks |
 | `scripts/test.ps1` | `TEST_SUITE_PASS scripts=35` |
 | `tests/phase139_ftue.gd` | 329 checks |
 | `tests/phase139b_layout.gd` | 237 checks |
