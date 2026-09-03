@@ -174,6 +174,13 @@ func show_alert(message: String) -> void:
 func configure_mode(preset_id: int) -> void:
 	_preset_id = clampi(preset_id, 0, 2)
 	_onboarding.preset_id = _preset_id
+	# Everything the game says to a new player -- the objective, what counts as progress, the
+	# mode's opening hint and the link into the Codex -- lives in this popup, and it used to
+	# start closed. The only way to reach it was to guess that the Objective chip in the top bar
+	# was a button, so a first-time player was told nothing at all. Start it open while hints are
+	# on; "Dismiss hints" and the chip both still close it.
+	if _onboarding.enabled and not _goal_expanded:
+		_toggle_goal_details()
 	_mode_badge.text = ["FACTORY", "CHARACTER", "CREATIVE"][_preset_id]
 	_mode_badge.add_theme_color_override("font_color", [KoalaSandTheme.COLOR_INFO, KoalaSandTheme.COLOR_SUCCESS, KoalaSandTheme.COLOR_ACCENT_BRIGHT][_preset_id])
 	_overlay_menu.set_item_disabled(1, _preset_id == GameModeCapabilities.Preset.CHARACTER)
@@ -351,6 +358,10 @@ func show_notification(message: String, kind := "INFO") -> void:
 
 func modal_open() -> bool:
 	return _ui_state.world_input_blocked()
+
+
+func last_notification() -> String:
+	return str(_ui_state.notification)
 
 
 func close_top_modal() -> bool:
@@ -776,6 +787,12 @@ func _build_tool_data() -> void:
 		if tool.kind == "structure":
 			tool.locked = not _world.is_structure_unlocked(tool.id)
 			tool.help = HelpCatalog.component(int(tool.id), Dictionary(structures.get(int(tool.id), {})), bool(tool.locked))
+		elif tool.kind == "subsurface":
+			# Subsurface Channels are gated by Research like any Component, but nothing ever set
+			# their locked flag, so they showed as available and then refused in silence.
+			tool.locked = _world.has_method("is_subsurface_unlocked") and not _world.is_subsurface_unlocked(int(tool.depth))
+			if not tool.has("help"):
+				tool.help = {"title":str(tool.name), "description":"A buried transport route between an entrance and an exit. Requires the matching Subsurface Logistics research."}
 		elif tool.kind in ["terrain", "material"]:
 			var registry := MaterialRegistry.new()
 			if registry.load_directory() == OK:
@@ -784,11 +801,21 @@ func _build_tool_data() -> void:
 				if material_definition != null: tool.help = HelpCatalog.material(material_definition)
 		elif not tool.has("help"):
 			tool.help = {"title":str(tool.name), "description":"Select this tool to interact with ordinary physical world cells."}
+	# Fill the quickbar with what the player can build now before what they cannot. Slicing the
+	# catalog in raw order gave a new Factory player six locked Pipe entries out of ten on the
+	# first page: a toolbar that is mostly things the game refuses to place teaches the wrong
+	# thing about the game. Order is otherwise preserved, so the layout stays recognisable.
+	var available: Array[Dictionary] = []
+	var unavailable: Array[Dictionary] = []
+	for tool: Dictionary in tools:
+		if bool(tool.get("locked", false)): unavailable.append(tool)
+		else: available.append(tool)
+	var ordered: Array[Dictionary] = available + unavailable
 	for page in PAGE_COUNT:
 		_pages[page] = []
 		for index in SLOT_COUNT:
 			var tool_index := page * SLOT_COUNT + index
-			_pages[page].append(tools[tool_index] if tool_index < tools.size() else {})
+			_pages[page].append(ordered[tool_index] if tool_index < ordered.size() else {})
 	set_meta("catalog_tools", tools)
 
 func _refresh_slots() -> void:
@@ -825,6 +852,12 @@ func _on_catalog_tool_activated(selected: Dictionary) -> void:
 	_selected_tool_key = _tool_key(selected)
 	for node: Node in _catalog_grid.get_children():
 		if node is CatalogCard: (node as CatalogCard).set_selected(_tool_key((node as CatalogCard).tool) == _selected_tool_key)
+	# Picking something out of the catalog is the player saying "now let me place this", so the
+	# catalog has to get out of the way. While it stayed open it counted as an open modal, and
+	# an open modal makes _pointer_over_ui() true for the whole screen -- so every world click
+	# was swallowed and the chosen Component could never be placed at all.
+	if _catalog.visible:
+		toggle_catalog()
 	tool_selected.emit(selected)
 
 

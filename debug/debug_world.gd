@@ -5,6 +5,17 @@ const ZOOM_LEVELS: Array[float] = [0.5, 1.0, 1.5, 2.0, 3.0, 5.0, 8.0, 12.0, 16.0
 const GENERATION_WORKERS := 2
 # An interpolated igniter path longer than this is a pointer jump, not a gesture.
 const MAX_STROKE_POINTS := 512
+# The build validator already knows exactly why a placement is impossible. These turn its
+# reasons into something a player can act on, because the alternative -- what the game did
+# before -- was to refuse in complete silence and look broken.
+const BUILD_REFUSAL_TEXT := {
+	"OUT_OF_RANGE": "Out of build range · move closer",
+	"UNKNOWN_AREA": "You have not explored that area yet",
+	"BLOCKED_INTERACTION": "Something solid is in the way",
+	"COLLIDES_WITH_TERRAIN": "That space is solid · dig it out first",
+	"COLLIDES_WITH_MATERIAL": "That space is full of material · clear it first",
+	"TECH_LOCKED": "Locked · research it first",
+}
 const MAX_CHUNKS_PUBLISHED_PER_FRAME := 4
 const STREAM_PREFETCH_MARGIN := 2
 const STREAM_EVICTION_MARGIN := 7
@@ -704,9 +715,12 @@ func _handle_mouse_button(event: InputEventMouseButton) -> void:
 		else:
 			if event.pressed and not _pointer_over_ui():
 				var placement_cell := _mouse_world_cell()
+				var footprint := _structure_preview_cells(placement_cell)
 				if _character != null and not _character.can_interact(placement_cell):
+					_refuse_build(footprint)
 					return
-				_submit_world_command(WorldCommand.Type.PLACE_STRUCTURE, {"type_id": build_structure_type, "x": placement_cell.x, "y": placement_cell.y, "orientation": build_structure_orientation})
+				if not _submit_world_command(WorldCommand.Type.PLACE_STRUCTURE, {"type_id": build_structure_type, "x": placement_cell.x, "y": placement_cell.y, "orientation": build_structure_orientation}):
+					_refuse_build(footprint)
 				structure_renderer.sync_visible(_expanded_chunk_rect(_visible_chunk_rect, 1), true)
 				_update_structure_preview()
 		return
@@ -1005,16 +1019,23 @@ func _place_subsurface_drag(end_cell: Vector2i) -> void:
 		return
 	var delta := end_cell - _structure_drag_start
 	var end := Vector2i(_structure_drag_start.x, end_cell.y) if absi(delta.y) > absi(delta.x) else Vector2i(end_cell.x, _structure_drag_start.y)
+	var cells := _line_cells(_structure_drag_start, end)
 	if _character != null and (not _character.can_interact(_structure_drag_start) or not _character.can_interact(end)):
+		_refuse_build(cells)
 		_subsurface_dragging = false
 		return
-	_submit_world_command(WorldCommand.Type.PLACE_SUBSURFACE_CHANNEL, {
+	if not _submit_world_command(WorldCommand.Type.PLACE_SUBSURFACE_CHANNEL, {
 		"depth": _subsurface_depth,
 		"x0": _structure_drag_start.x,
 		"y0": _structure_drag_start.y,
 		"x1": end.x,
 		"y1": end.y,
-	})
+	}):
+		# A Subsurface Channel is gated by its own Research tier, so say so rather than nothing.
+		if not world.is_subsurface_unlocked(_subsurface_depth):
+			factory_hud.show_notification(str(BUILD_REFUSAL_TEXT["TECH_LOCKED"]), "WARNING")
+		else:
+			_refuse_build(cells)
 	_subsurface_dragging = false
 	structure_renderer.sync_visible(_expanded_chunk_rect(_visible_chunk_rect, 1), true)
 	map_overlay_renderer.sync_visible(_expanded_chunk_rect(_visible_chunk_rect, 1))
@@ -1512,20 +1533,61 @@ func _place_conveyor_drag(end_cell: Vector2i) -> void:
 	if not _structure_dragging:
 		return
 	var end := Vector2i(end_cell.x, _structure_drag_start.y)
-	if _character != null:
-		var cells: Array[Vector2i] = []
-		for x in range(mini(_structure_drag_start.x, end.x), maxi(_structure_drag_start.x, end.x) + 1):
-			cells.append(Vector2i(x, end.y))
-		if not _character.can_build_cells(cells):
-			_structure_dragging = false
-			return
-	_submit_world_command(WorldCommand.Type.PLACE_CONVEYOR_LINE, {
+	var cells: Array[Vector2i] = []
+	for x in range(mini(_structure_drag_start.x, end.x), maxi(_structure_drag_start.x, end.x) + 1):
+		cells.append(Vector2i(x, end.y))
+	if _character != null and not _character.can_build_cells(cells):
+		_refuse_build(cells)
+		_structure_dragging = false
+		return
+	if not _submit_world_command(WorldCommand.Type.PLACE_CONVEYOR_LINE, {
 		"x0": _structure_drag_start.x, "x1": end.x, "y": end.y,
 		"direction": -1 if build_structure_type == 1 else 1,
-	})
+	}):
+		_refuse_build(cells)
 	_structure_dragging = false
 	structure_renderer.sync_visible(_expanded_chunk_rect(_visible_chunk_rect, 1), true)
 	_update_structure_preview()
+
+
+func _refuse_build(cells: Array[Vector2i]) -> void:
+	factory_hud.show_notification(_build_refusal_reason(cells), "WARNING")
+	if _audio_mixer != null: _audio_mixer.play_ui(&"invalid")
+	if _feedback_renderer != null and not cells.is_empty(): _feedback_renderer.emit(&"invalid", cells[0])
+
+
+func _line_cells(from_cell: Vector2i, to_cell: Vector2i) -> Array[Vector2i]:
+	var cells: Array[Vector2i] = []
+	var steps := maxi(absi(to_cell.x - from_cell.x), absi(to_cell.y - from_cell.y))
+	if steps == 0:
+		cells.append(from_cell)
+		return cells
+	for step in range(steps + 1):
+		var fraction := float(step) / float(steps)
+		cells.append(Vector2i(roundi(lerpf(from_cell.x, to_cell.x, fraction)), roundi(lerpf(from_cell.y, to_cell.y, fraction))))
+	return cells
+
+
+func _build_refusal_reason(cells: Array[Vector2i]) -> String:
+	# In Character Mode the validator answers for reach, visibility and obstruction in one go.
+	if _character != null:
+		var classified: Dictionary = _character.classify_build_cells(cells, world.is_structure_unlocked(build_structure_type))
+		for cell in cells:
+			var reason := str(classified.get(cell, "VALID"))
+			if reason != "VALID":
+				return str(BUILD_REFUSAL_TEXT.get(reason, reason.replace("_", " ").capitalize()))
+	# Factory and Creative Mode build without a character, so answer from the world directly.
+	if build_structure_type > 0 and not world.is_structure_unlocked(build_structure_type):
+		return str(BUILD_REFUSAL_TEXT["TECH_LOCKED"])
+	for cell in cells:
+		if int(world.get_structure(cell)) != 0:
+			return "Something is already built there"
+		var material := int(world.get_cell(cell))
+		if material == -1:
+			return "That area has not finished generating yet"
+		if material != 0:
+			return str(BUILD_REFUSAL_TEXT["COLLIDES_WITH_MATERIAL"])
+	return "That component does not fit here"
 
 
 func _place_pipe_drag(end_cell: Vector2i) -> void:
@@ -1533,10 +1595,13 @@ func _place_pipe_drag(end_cell: Vector2i) -> void:
 		return
 	var delta := end_cell - _structure_drag_start
 	var end := Vector2i(end_cell.x, _structure_drag_start.y) if absi(delta.x) >= absi(delta.y) else Vector2i(_structure_drag_start.x, end_cell.y)
+	var cells := _line_cells(_structure_drag_start, end)
 	if _character != null and (not _character.can_interact(_structure_drag_start) or not _character.can_interact(end)):
+		_refuse_build(cells)
 		_structure_dragging = false
 		return
-	_submit_world_command(WorldCommand.Type.PLACE_PIPE_LINE, {"x0": _structure_drag_start.x, "y0": _structure_drag_start.y, "x1": end.x, "y1": end.y})
+	if not _submit_world_command(WorldCommand.Type.PLACE_PIPE_LINE, {"x0": _structure_drag_start.x, "y0": _structure_drag_start.y, "x1": end.x, "y1": end.y}):
+		_refuse_build(cells)
 	_structure_dragging = false
 	structure_renderer.sync_visible(_expanded_chunk_rect(_visible_chunk_rect, 1), true)
 	_update_structure_preview()

@@ -9,7 +9,31 @@ None known after the Phase 13.9 verification gate.
 ## P1
 
 - **Dense synthetic Megafactory:** intentionally pathological density now measures `79.4 FPS`, `16.667 ms` p95 and `18.031 ms` p99, up from `43.7 FPS` / `25.000 ms` / `27.905 ms`. It is still reported separately from the realistic maximum-factory gate; see [PERFORMANCE.md](PERFORMANCE.md).
+- **Factory Mode offers tools its capability table forbids:** `GameModeCapabilities` declares
+  `creative_paint`, `creative_erase` and `world_edit` Creative-only, Factory Mode runs
+  `ProgressionMode.NORMAL`, and yet the Factory quickbar offers raw material brushes and nothing
+  enforces the capability in the command path. Either the table or the catalog is wrong; see
+  [FIRST_RUN_PASS.md](FIRST_RUN_PASS.md). Left for an owner decision because enforcing the table
+  as written may remove the only way to excavate in a mode with no character.
 - **Manual playtest coverage:** automated captures and state assertions cannot establish subjective controls, readability, audio balance or fun. The owner checklist remains required.
+
+## Fixed in the first run pass
+
+- **A Component chosen from the catalog could never be placed:** the catalog is a modal and did
+  not close on selection, and an open modal makes `_pointer_over_ui()` true for the whole
+  screen. Selecting a Conveyor and clicking in the world did nothing, every time, with no
+  indication why.
+- **Every build refusal was silent:** the validator computes exact reasons and the placement
+  paths discarded them. Aiming a Conveyor at the ground -- the way belts work in every other
+  factory game, and wrong here because a Conveyor occupies the cell itself -- produced no sound,
+  no message and no reason to try one cell higher.
+- **Nothing the game says was on screen:** the objective, the progress criteria, the mode's
+  opening hint and the Codex link all lived in a popup that started closed behind an
+  unmarked chip in the top bar.
+- **The first quickbar page was mostly locked:** six of ten entries were Pipe components a new
+  Factory player cannot build.
+- **Subsurface Channels claimed to be unlocked:** their catalog entry never set a locked flag
+  even though placement is gated by `logistics.subsurface_*` research.
 
 ## Fixed in the input and simulation performance pass
 

@@ -40,7 +40,8 @@ $Tests = @(
     'tests/v5_worldgen.gd',
     'tests/brush_stroke.gd',
     'tests/new_world_state.gd',
-    'tests/granular_movement.gd'
+    'tests/granular_movement.gd',
+    'tests/build_flow.gd'
 )
 if ($Quick) {
     $Tests = @('tests/test_runner.gd', 'tests/native_correctness.gd', 'tests/phase13_correctness.gd', 'tests/phase13_persistence.gd', 'tests/phase137_hardening.gd')

@@ -178,6 +178,9 @@ public:
     bool can_place_structure(int32_t type_id, Vector2i origin, int32_t orientation = 0) const;
     int64_t place_structure(int32_t type_id, Vector2i origin, int32_t orientation = 0);
     Dictionary apply_structure_batch(PackedInt32Array operations, int32_t validation_mode = 0);
+    // Public so the build catalog can mark a Subsurface Channel locked before the player
+    // selects one. It used to show as available and then silently refuse.
+    bool subsurface_unlocked(int32_t depth) const;
     bool can_place_subsurface_channel(int32_t depth, Vector2i entrance, Vector2i exit) const;
     int64_t place_subsurface_channel(int32_t depth, Vector2i entrance, Vector2i exit);
     bool remove_subsurface_channel(int64_t channel_id, int32_t removal_policy = 1);
@@ -1339,7 +1342,6 @@ private:
     void reset_subsurface_logistics();
     void process_subsurface_logistics();
     void wake_subsurface_at(Vector2i world_cell);
-    bool subsurface_unlocked(int32_t depth) const;
     void activate_machines_at_port(Vector2i world_cell);
     void register_machine_ports(const MachineEntity &entity);
     void unregister_machine_ports(const MachineEntity &entity);

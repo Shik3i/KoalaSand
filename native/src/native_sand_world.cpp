@@ -365,6 +365,7 @@ void NativeSandWorld::_bind_methods() {
     ClassDB::bind_method(D_METHOD("can_place_structure", "type_id", "origin", "orientation"), &NativeSandWorld::can_place_structure, DEFVAL(0));
     ClassDB::bind_method(D_METHOD("place_structure", "type_id", "origin", "orientation"), &NativeSandWorld::place_structure, DEFVAL(0));
     ClassDB::bind_method(D_METHOD("apply_structure_batch", "operations", "validation_mode"), &NativeSandWorld::apply_structure_batch, DEFVAL(0));
+    ClassDB::bind_method(D_METHOD("is_subsurface_unlocked", "depth"), &NativeSandWorld::subsurface_unlocked);
     ClassDB::bind_method(D_METHOD("can_place_subsurface_channel", "depth", "entrance", "exit"), &NativeSandWorld::can_place_subsurface_channel);
     ClassDB::bind_method(D_METHOD("place_subsurface_channel", "depth", "entrance", "exit"), &NativeSandWorld::place_subsurface_channel);
     ClassDB::bind_method(D_METHOD("remove_subsurface_channel", "channel_id", "removal_policy"), &NativeSandWorld::remove_subsurface_channel, DEFVAL(1));
