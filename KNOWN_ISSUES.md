@@ -54,6 +54,11 @@ None known after the Phase 13.9 verification gate.
 - **Reaching a milestone was never acknowledged:** `_last_milestones` was recorded every frame
   and read by nothing, so completing the objective the game asked for produced no message and no
   sound.
+- **No discoverable way to dig:** the Excavate brush was bound only to the `E` key on a toolbar
+  this UI does not show, and appeared in neither the catalog nor the action row. Factory Mode has
+  no character to dig with, so terrain could not be moved at all by any means a player could
+  find. The one terrain button that was present was labelled "Dig" and selected the Harvest
+  brush, which only affects Coal.
 - **The first quickbar page was mostly locked:** six of ten entries were Pipe components a new
   Factory player cannot build.
 - **Subsurface Channels claimed to be unlocked:** their catalog entry never set a locked flag

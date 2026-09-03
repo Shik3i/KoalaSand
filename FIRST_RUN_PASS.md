@@ -226,6 +226,31 @@ The third objective said "Build a screening or separation Component" without men
 Vibrating Screen is behind Dry Separation research, which is the thing actually standing between
 the player and the milestone. It says that now.
 
+## 11. There was no discoverable way to dig
+
+Refusing a placement with "That space is solid · dig it out first" is only honest if there is a
+way to dig. There was not.
+
+The Excavate brush existed and worked, bound to the `E` key on a toolbar this UI does not show
+(`BuildToolbar` is `visible = false` in the scene). It appeared in neither the Build Catalog nor
+the action row. Factory Mode has no character to dig with, so a Factory player had no
+discoverable way to move terrain at all — which is also why the Research economy looked
+optional: painting Sand was the only material source anyone could find.
+
+The one terrain button that *was* in the action row was mislabelled. It is drawn as a pick and
+called "Dig", and it selects the **Harvest** brush, which turns Coal into Coal Chunk and does
+nothing whatsoever to anything else. A player pressing it on sand gets no result and no
+explanation.
+
+Both are now in the action row and both are findable in the catalog by the names the game uses
+for them elsewhere: **Excavate** and **Harvest Coal**. Harvest Coal was previously filtered out
+of the catalog on purpose; the second objective asks the player to harvest Coal by name, so it
+has to be findable by that name.
+
+`tests/build_flow.gd` asserts both are in the catalog, that selecting Excavate puts the brush in
+erase mode, and that using it actually clears a solid cell — the advice the refusal message
+gives, followed literally.
+
 ---
 
 ## Verification
@@ -237,7 +262,7 @@ refusal said nothing.
 
 | | Result |
 | --- | --- |
-| `tests/build_flow.gd` | 80 checks |
+| `tests/build_flow.gd` | 86 checks |
 | `scripts/test.ps1` | `TEST_SUITE_PASS scripts=35` |
 | `tests/phase139_ftue.gd` | 329 checks |
 | `tests/phase139b_layout.gd` | 237 checks |

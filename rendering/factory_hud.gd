@@ -486,21 +486,26 @@ func _build_bottom_dock() -> void:
 	_action_group = HBoxContainer.new(); _action_group.set_meta("layout_role", "world_actions"); action_panel.add_child(_action_group)
 	_compact_tools_button = Button.new(); _compact_tools_button.theme_type_variation = "QuietButton"; _compact_tools_button.text = "Tools  ▾"; _compact_tools_button.visible = false; _action_group.add_child(_compact_tools_button)
 	_action_row = HBoxContainer.new(); _action_row.add_theme_constant_override("separation", 3); _action_group.add_child(_action_row)
+	# Excavate was reachable only by pressing E, on a toolbar that is not visible in this UI, so
+	# in Factory Mode -- which has no character to dig with -- there was no discoverable way to
+	# move terrain at all. The old "Dig" button was also mislabelled: it selects the Harvest
+	# brush, which only turns Coal into Coal Chunk and does nothing to anything else.
 	var actions: Array[Dictionary] = [
 		{"name":"Select", "kind":"select", "id":0, "icon":"select"}, {"name":"Pick", "kind":"pipette", "id":0, "icon":"pipette"},
-		{"name":"Dig", "kind":"terrain", "id":3, "icon":"dig"}, {"name":"Cut", "kind":"organic_clear", "id":0, "icon":"remove"},
+		{"name":"Excavate", "kind":"terrain", "id":2, "icon":"dig"},
+		{"name":"Harvest Coal", "kind":"terrain", "id":3, "icon":"dig"}, {"name":"Cut", "kind":"organic_clear", "id":0, "icon":"remove"},
 		{"name":"Ignite", "kind":"ignite", "id":0, "icon":"furnace"}, {"name":"Remove", "kind":"remove", "id":0, "icon":"remove"},
 		{"name":"Plan", "kind":"blueprint_select", "id":0, "icon":"blueprint"},
 	]
 	_tools_menu = PopupMenu.new(); add_child(_tools_menu)
-	var action_glyphs := ["⌖", "⌁", "⛏", "✂", "✦", "×", "◇"]
+	var action_glyphs := ["⌖", "⌁", "⛏", "◈", "✂", "✦", "×", "◇"]
 	for action_index in range(actions.size()):
 		var action: Dictionary = actions[action_index]
 		var button := Button.new(); button.theme_type_variation = "QuietButton"; button.text = action_glyphs[action_index]; button.tooltip_text = str(action.name); button.custom_minimum_size.x = 38; button.pressed.connect(func(): tool_selected.emit(action)); _action_row.add_child(button)
 		_tools_menu.add_item(str(action.name), _tools_menu.item_count)
 		var help_id: String = str({"pipette":"pipette", "blueprint_select":"blueprint", "select":"info_mode"}.get(str(action.kind), ""))
 		HelpCatalog.attach(button, HelpCatalog.control(help_id) if not help_id.is_empty() else {"title":str(action.name), "description":"Use this world tool to interact with physical cells and Components."})
-		if str(action.kind) == "terrain": _help_targets.dig = button
+		if str(action.kind) == "terrain" and int(action.id) == 3: _help_targets.dig = button
 		if str(action.kind) == "select": _help_targets.info = button
 	_tools_menu.id_pressed.connect(func(id: int): if id >= 0 and id < actions.size(): tool_selected.emit(actions[id]))
 	_compact_tools_button.pressed.connect(func(): _tools_menu.position = Vector2i(_compact_tools_button.global_position + Vector2(0, -_tools_menu.size.y)); _tools_menu.popup())
@@ -752,7 +757,8 @@ func _build_tool_data() -> void:
 		{"kind":"subsurface", "id":1, "depth":1, "name":"Subsurface Channel II", "short":"II", "icon":"conveyor", "category":"Subsurface Logistics"},
 		{"kind":"subsurface", "id":2, "depth":2, "name":"Subsurface Channel III", "short":"III", "icon":"conveyor", "category":"Subsurface Logistics"},
 		{"kind":"terrain", "id":0, "name":"Raw Sand", "short":"S", "icon":"tool", "category":"Terrain / Creative"},
-		{"kind":"terrain", "id":3, "name":"Dig / Harvest", "short":"D", "icon":"dig", "category":"Terrain / Creative"},
+		{"kind":"terrain", "id":2, "name":"Excavate", "short":"E", "icon":"dig", "category":"Terrain / Creative"},
+		{"kind":"terrain", "id":3, "name":"Harvest Coal", "short":"D", "icon":"dig", "category":"Terrain / Creative"},
 		{"kind":"material", "id":21, "name":"Wood", "short":"WD", "icon":"tool", "category":"Organic / Creative"},
 		{"kind":"material", "id":22, "name":"Leaves", "short":"LV", "icon":"tool", "category":"Organic / Creative"},
 		{"kind":"material", "id":23, "name":"Charcoal", "short":"CH", "icon":"tool", "category":"Organic / Creative"},
@@ -778,7 +784,10 @@ func _build_tool_data() -> void:
 		{"kind":"automation", "id":24, "name":"Power Switch Control", "short":"PSC", "icon":"wire", "category":"Power Automation"},
 		{"kind":"wiring", "id":0, "name":"Wire", "short":"Y", "icon":"wire", "category":"Automation"},
 	]
-	tools = tools.filter(func(tool: Dictionary) -> bool: return str(tool.kind) not in ["organic_clear", "ignite", "remove", "wiring"] and not (str(tool.kind) == "terrain" and int(tool.id) == 3))
+	# Harvest Coal used to be excluded from the catalog because it lives in the action row, but
+	# the objective tells the player to harvest Coal and the action row is unlabelled glyphs.
+	# A tool the game asks for by name has to be findable by that name.
+	tools = tools.filter(func(tool: Dictionary) -> bool: return str(tool.kind) not in ["organic_clear", "ignite", "remove", "wiring"])
 	tools = tools.filter(func(tool: Dictionary) -> bool: return str(tool.kind) != "automation")
 	for automation_definition: Dictionary in _world.get_automation_definitions():
 		var automation_help_definition := automation_definition.duplicate(true); automation_help_definition.key = str(automation_definition.id)

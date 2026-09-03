@@ -56,6 +56,7 @@ func _run(scene: Node) -> void:
 	_test_experiments_that_claim_to_be_reachable_are(scene)
 	_test_the_first_instruction_actually_works(scene)
 	_test_the_second_instruction_tells_the_truth(scene)
+	_test_the_advice_to_dig_it_out_can_be_followed(scene)
 	if failures.is_empty():
 		print("PASS: %d build flow checks" % checks)
 		quit(0)
@@ -360,6 +361,33 @@ func _test_the_second_instruction_tells_the_truth(scene: Node) -> void:
 		var accepted := int(world.get_bank_statistics().get("accepted_total", 0)) > before
 		_equal(accepted, bool(probe.accepted),
 			"the Research Bank %s material %d, as the objective says" % ["takes" if probe.accepted else "refuses", int(probe.material)])
+
+
+func _test_the_advice_to_dig_it_out_can_be_followed(scene: Node) -> void:
+	# Refusing a placement with "dig it out first" is only honest if there is a way to dig.
+	# Excavate was bound to the E key on a toolbar this UI does not show, and appeared in
+	# neither the catalog nor the action row, so in Factory Mode -- which has no character to
+	# dig with -- there was no discoverable way to move terrain at all.
+	var hud: Variant = scene.get("factory_hud")
+	var names := {}
+	for tool: Dictionary in (hud.get_meta("catalog_tools") as Array): names[str(tool.get("name", ""))] = tool
+	_check(names.has("Excavate"), "a tool named Excavate is findable in the catalog")
+	_check(names.has("Harvest Coal"), "a tool named Harvest Coal is findable, as the objective asks for")
+
+	# Selecting it has to actually put the brush in erase mode, and erasing has to work.
+	scene.call("_on_factory_tool_selected", {"kind": "terrain", "id": 2, "name": "Excavate"})
+	_equal(int(scene.get("brush_mode")), 2, "Excavate selects the erase brush")
+	_equal(int(scene.call("_current_brush_material")), 0, "the erase brush writes emptiness")
+
+	var world: Variant = scene.get("world")
+	var spawn: Vector2i = world.get_character_spawn()
+	var solid := Vector2i(spawn.x + 200, spawn.y + 8)
+	world.set_cell(solid, 1)
+	_check(int(world.get_cell(solid)) != 0, "there is something to dig out")
+	scene.set("_painting", true)
+	scene.call("_paint_line", solid, solid)
+	_equal(int(world.get_cell(solid)), 0, "following the advice clears the cell")
+	scene.set("_painting", false)
 
 
 func _scripts_under(root: String) -> Array[String]:
