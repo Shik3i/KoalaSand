@@ -20,6 +20,13 @@ None known after the Phase 13.9 verification gate.
   are read by `ExperimentTracker` and published by nothing. Each needs a decision about what the
   simulation should measure; see [FIRST_RUN_PASS.md](FIRST_RUN_PASS.md). The gap is pinned by
   `tests/build_flow.gd` so it cannot grow.
+- **The 1M-Steam benchmark gate sits on its own boundary:** `benchmark_phase95.gd` asserts the
+  eight-worker average is `<= 8.0 ms`, and three consecutive runs on the Phase 13.9 host measured
+  `7.79`, `7.92` and `8.00 ms`. It therefore fails roughly one run in three, which makes
+  `scripts/benchmark.ps1` unusable as a gate even though nothing is wrong. The measurement is
+  memory-bandwidth bound and moves with host state; earlier runs on the same build measured
+  `7.52`-`7.68 ms`. Deliberately not relaxed: either the fluid pass earns real headroom or the
+  gate is restated as a distribution rather than a single average, and both are owner calls.
 - **Manual playtest coverage:** automated captures and state assertions cannot establish subjective controls, readability, audio balance or fun. The owner checklist remains required.
 
 ## Fixed in the first run pass
@@ -39,6 +46,11 @@ None known after the Phase 13.9 verification gate.
   ones the simulation publishes, and the first key was among them, so the objective read "Move
   physical material" for the entire game regardless of progress. Its criteria were also the same
   three generic words on every step.
+- **A Conveyor could not be started by dropping matter onto it:** the condition that enables
+  movement notifications asked whether a belt was already awake, and belts are woken only by
+  those notifications. Painting matter directly into the cell above a belt worked because
+  `set_cell()` wakes belts itself; letting it fall -- what the game's own first instruction says
+  to do -- left it on a dead belt forever.
 - **Reaching a milestone was never acknowledged:** `_last_milestones` was recorded every frame
   and read by nothing, so completing the objective the game asked for produced no message and no
   sound.

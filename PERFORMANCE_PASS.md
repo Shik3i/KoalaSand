@@ -1,8 +1,14 @@
 # Input and Simulation Performance Pass
 
 The owner started the game, held the left mouse button and moved it to spawn Sand, and reported
-zero frames per second. This pass began there and ended with the whole benchmark suite passing
-end to end for the first time.
+zero frames per second. This pass began there and ended with the whole benchmark suite running
+end to end for the first time, and passing.
+
+One caveat found later, while working on a different pass: `benchmark_phase95.gd` asserts the
+1M-Steam eight-worker average is `<= 8.0 ms`, and repeated runs on this host measure `7.5`-`8.0
+ms`. It passed on every run in this pass, but it sits on its own boundary and fails roughly one
+run in three once the host has been busy. That is recorded in `KNOWN_ISSUES.md` rather than
+fixed by moving the threshold.
 
 Two gates were carried in `PERFORMANCE.md` as disclosed optimization debt. Only one of them was
 actually failing. The Phase 3 50k-active Conveyor stress measured `15.346 ms/tick` on this host

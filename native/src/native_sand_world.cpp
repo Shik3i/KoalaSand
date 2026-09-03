@@ -1316,9 +1316,19 @@ int32_t NativeSandWorld::transfer_water(Vector2i source, Vector2i destination, i
     return transfer_mobile_material(source, destination, requested, result, downward, collect_changes);
 }
 
+// Whether a granular or fluid move has to report the cells it touched to the serial barrier.
+//
+// Every term here asks whether a subsystem *exists* that could care -- except that the belt term
+// used to ask whether any belt was already awake, which is circular: a sleeping belt is woken by
+// activate_belts_near(), activate_belts_near() is only reached through these notifications, and
+// the notifications were switched off precisely because no belt was awake. So a Conveyor could
+// never be started by matter falling onto it. Painting matter directly into the cell above a
+// belt happened to work, because set_cell() wakes belts itself; dropping it from one cell higher
+// -- which is what the game tells a new player to do -- left the matter sitting on a dead belt
+// forever. Belts existing is the condition, not belts already running.
 bool NativeSandWorld::should_collect_matter_changes() const {
     return !automation_cell_watchers_.empty() || !machine_port_watchers_.empty() || !physical_processors_.empty() ||
-           !active_belts_.empty() || !pipe_segments_.empty() || !subsurface_cell_watchers_.empty();
+           belts_total_ > 0 || !pipe_segments_.empty() || !subsurface_cell_watchers_.empty();
 }
 
 void NativeSandWorld::apply_matter_notifications(const std::vector<MatterJobResult> &results) {

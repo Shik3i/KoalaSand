@@ -179,6 +179,39 @@ duplicates *Air Changes Fire*. Guessing would teach the player the wrong physics
 `tests/build_flow.gd` now pins both halves: the four wired counters must stay published, and the
 four missing ones must stay missing. Implementing one makes the test say so.
 
+## 9. A Conveyor could not be started by dropping matter onto it
+
+Following the game's own first instruction did not work.
+
+`should_collect_matter_changes()` decides whether a granular or fluid move reports the cells it
+touched to the serial barrier. Every term in it asks whether a subsystem that could care
+*exists* — except the belt term, which asked whether any belt was already **awake**:
+
+```cpp
+return ... || !active_belts_.empty() || ...;
+```
+
+That is circular. A sleeping belt is woken by `activate_belts_near()`; `activate_belts_near()`
+is only reached through these notifications; and the notifications were switched off precisely
+because no belt was awake. A Conveyor could therefore never be started by matter falling onto
+it.
+
+It looked like it worked, which is why it survived. `set_cell()` wakes belts itself, so painting
+matter *directly into* the cell above a belt starts it. Dropping matter from one cell higher —
+which is what "drop matter onto it" means, and what a player does — left the matter sitting on a
+dead belt forever:
+
+| Matter placed | Belts considered | Moves | Milestone |
+| --- | ---: | ---: | --- |
+| directly in the cell above the belt | 12 | 1 | reached |
+| one cell higher, allowed to fall | 0 | 0 | never |
+
+Belts existing is the condition, not belts already running. `tests/build_flow.gd` now follows
+the printed instruction literally — place the Conveyor in open air, drop Sand from four cells up,
+step — and asserts the matter travels and the milestone is reached. It drops from a height on
+purpose: painting into the adjacent cell would pass through the `set_cell()` path and prove
+nothing.
+
 ---
 
 ## Verification
@@ -190,7 +223,7 @@ refusal said nothing.
 
 | | Result |
 | --- | --- |
-| `tests/build_flow.gd` | 71 checks |
+| `tests/build_flow.gd` | 74 checks |
 | `scripts/test.ps1` | `TEST_SUITE_PASS scripts=35` |
 | `tests/phase139_ftue.gd` | 329 checks |
 | `tests/phase139b_layout.gd` | 237 checks |

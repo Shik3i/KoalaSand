@@ -50,6 +50,7 @@ func _run(scene: Node) -> void:
 	_test_every_codex_link_in_the_ui_resolves(scene)
 	_test_reaching_a_milestone_is_announced(scene)
 	_test_experiments_that_claim_to_be_reachable_are(scene)
+	_test_the_first_instruction_actually_works(scene)
 	if failures.is_empty():
 		print("PASS: %d build flow checks" % checks)
 		quit(0)
@@ -284,6 +285,47 @@ func _test_experiments_that_claim_to_be_reachable_are(scene: Node) -> void:
 	for key: String in EXPERIMENTS_WITHOUT_A_COUNTER:
 		_check(not everywhere.has(key),
 			"'%s' still has no counter; if it now does, wire the Experiment to it" % key)
+
+
+func _test_the_first_instruction_actually_works(scene: Node) -> void:
+	# The game now tells a new player exactly this: "Place a Conveyor in open air above the
+	# ground · Drop matter onto it · Watch it travel". Following those words has to reach the
+	# milestone they are attached to, or the instruction is worse than no instruction.
+	var world: Variant = scene.get("world")
+	world.set_game_mode(1)
+	var spawn: Vector2i = world.get_character_spawn()
+	var chunk := Vector2i(spawn.x >> 6, spawn.y >> 6)
+	world.request_chunk_region(Rect2i(chunk.x - 2, chunk.y - 2, 5, 4), 0)
+	world.flush_generation()
+
+	# Find the ground under the spawn, then the open air one cell above it.
+	var ground_y := spawn.y
+	for y in range(spawn.y - 20, spawn.y + 40):
+		if int(world.get_cell(Vector2i(spawn.x, y))) != 0:
+			ground_y = y
+			break
+	var belt_y := ground_y - 3
+	var from_cell := Vector2i(spawn.x - 6, belt_y)
+	var to_cell := Vector2i(spawn.x + 6, belt_y)
+
+	_equal(int(world.place_conveyor_line(from_cell, to_cell, 1)), to_cell.x - from_cell.x + 1,
+		"a Conveyor goes into the open air above the ground, as instructed")
+
+	# Drop matter onto it -- from above, which is what "drop" means and what a player does.
+	# Painting it directly into the cell above the belt would wake the belt through set_cell()
+	# and prove nothing: the bug was that matter arriving by falling never woke anything.
+	for x in range(from_cell.x, to_cell.x + 1):
+		world.set_cell(Vector2i(x, belt_y - 4), 2)
+
+	var moved := false
+	for _tick in range(240):
+		world.step()
+		if int(world.get_structure_statistics().get("belt_moves", 0)) > 0:
+			moved = true
+			break
+	_check(moved, "the matter travels once it lands on the Conveyor")
+	_check(bool(world.get_milestone_state().get("first_material_flow", false)),
+		"following the first instruction reaches the milestone it is attached to")
 
 
 func _scripts_under(root: String) -> Array[String]:

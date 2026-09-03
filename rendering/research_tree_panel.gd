@@ -102,6 +102,23 @@ func _draw() -> void:
 		draw_string(font, Vector2(34, size.y - 66), str(selected_definition.display_name), HORIZONTAL_ALIGNMENT_LEFT, size.x - 270, 17, KoalaSandTheme.COLOR_TEXT)
 		draw_string(font, Vector2(34, size.y - 43), "%s  ·  %s" % [selected_definition.description, prerequisite_text], HORIZONTAL_ALIGNMENT_LEFT, size.x - 270, 12, KoalaSandTheme.COLOR_TEXT_SECONDARY)
 		draw_string(font, Vector2(34, size.y - 21), "UNLOCKS  %s" % selected_definition.effect, HORIZONTAL_ALIGNMENT_LEFT, size.x - 270, 12, KoalaSandTheme.COLOR_ACCENT_BRIGHT)
+		# "NEEDS MATERIAL" without a number is not something a player can act on. Show what it
+		# costs next to what they actually hold, so the button states what is still missing.
+		var bank: Dictionary = _world.get_progression_state()
+		var costs: Dictionary = selected_definition.get("costs", {})
+		var parts: Array[String] = []
+		var short := false
+		for reserve: String in ["glass", "iron", "gold"]:
+			var required := int(costs.get(reserve, 0))
+			if required <= 0: continue
+			var held := int(bank.get(reserve, 0))
+			short = short or held < required
+			parts.append("%s %d/%d" % [reserve.capitalize(), held, required])
+		if not parts.is_empty():
+			# Right-aligned on the UNLOCKS baseline: the footer has three lines and no room for
+			# a fourth without colliding with the title.
+			draw_string(font, Vector2(34, size.y - 21), "COST  %s" % "  ·  ".join(parts), HORIZONTAL_ALIGNMENT_RIGHT,
+				size.x - 304, 12, KoalaSandTheme.COLOR_WARNING if short else KoalaSandTheme.COLOR_SUCCESS)
 	var button_rect := _unlock_rect()
 	var button_color := Color("c98225") if bool(selected_state.get("available", false)) and bool(selected_state.get("affordable", false)) else Color("34464a")
 	draw_rect(button_rect, button_color, true)
