@@ -24,17 +24,17 @@ const MILESTONE_OBJECTIVES: Array[Dictionary] = [
 		"criteria": ["Place a Conveyor in open air above the ground", "Drop matter onto it", "Watch it travel"]},
 	{"key": "first_research_deposit", "title": "Deposit into a Research Bank", "help": "concept:research",
 		"criteria": ["Build a Research Bank", "Route processed matter into it"]},
-	{"key": "first_concentrate", "title": "Separate by physical properties", "help": "concept:separation",
+	{"key": "first_concentrate", "title": "Separate by physical properties", "help": "concept:screening",
 		"criteria": ["Build a screening or separation Component", "Feed it mixed matter", "Collect what falls out"]},
-	{"key": "first_iron", "title": "Recover Iron", "help": "concept:separation",
+	{"key": "first_iron", "title": "Recover Iron", "help": "concept:screening",
 		"criteria": ["Concentrate the ferrous fraction", "Deposit Iron in a Research Bank"]},
-	{"key": "first_gold", "title": "Recover Gold", "help": "concept:separation",
+	{"key": "first_gold", "title": "Recover Gold", "help": "concept:screening",
 		"criteria": ["Gold is dense and rare", "Separate it by density, then deposit it"]},
-	{"key": "water_processing", "title": "Process with water", "help": "concept:wet_processing",
+	{"key": "water_processing", "title": "Process with water", "help": "concept:wet_separation",
 		"criteria": ["Route Water to a Wash Sluice", "Run grains through it"]},
 	{"key": "automation", "title": "Build Automation", "help": "concept:automation",
 		"criteria": ["Place a sensor and an actuator", "Wire the output to the input"]},
-	{"key": "steam", "title": "Produce Steam", "help": "concept:thermal",
+	{"key": "steam", "title": "Produce Steam", "help": "concept:heat",
 		"criteria": ["Heat contained Water past boiling", "Capture the Steam in Pipes"]},
 	{"key": "electricity", "title": "Generate Power", "help": "concept:power",
 		"criteria": ["Drive a Turbine with Steam", "Turn a shaft into a Generator"]},
@@ -1590,6 +1590,20 @@ func _refuse_build(cells: Array[Vector2i]) -> void:
 	if _feedback_renderer != null and not cells.is_empty(): _feedback_renderer.emit(&"invalid", cells[0])
 
 
+func _announce_reached_milestones(milestones: Dictionary) -> void:
+	# Say so when the player reaches one. _last_milestones was recorded every frame and never
+	# read, so the arc the objective walks the player through was completed in total silence.
+	# The first observation of a session is skipped: a loaded save arrives with milestones
+	# already met and must not replay the whole run as notifications.
+	if _last_milestones.is_empty():
+		return
+	for step: Dictionary in MILESTONE_OBJECTIVES:
+		var key := str(step.key)
+		if bool(milestones.get(key, false)) and not bool(_last_milestones.get(key, false)):
+			factory_hud.show_notification("Milestone reached · %s" % str(step.title), "SUCCESS")
+			if _audio_mixer != null: _audio_mixer.play_ui(&"milestone_complete")
+
+
 func _line_cells(from_cell: Vector2i, to_cell: Vector2i) -> Array[Vector2i]:
 	var cells: Array[Vector2i] = []
 	var steps := maxi(absi(to_cell.x - from_cell.x), absi(to_cell.y - from_cell.y))
@@ -2606,6 +2620,7 @@ func _update_phase135_feedback() -> void:
 			factory_hud.show_notification("Experiment complete: %s" % experiment_id.replace("_", " ").capitalize())
 			_audio_mixer.play_ui(&"milestone_complete")
 	var milestones: Dictionary = world.get_milestone_state()
+	_announce_reached_milestones(milestones)
 	for step: Dictionary in MILESTONE_OBJECTIVES:
 		if not bool(milestones.get(str(step.key), false)):
 			var criteria: Array[String] = []

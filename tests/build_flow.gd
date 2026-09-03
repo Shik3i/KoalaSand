@@ -47,6 +47,8 @@ func _run(scene: Node) -> void:
 	_test_placing_on_solid_ground_says_why(scene)
 	_test_a_refused_placement_says_why(scene)
 	_test_the_objective_tracks_the_simulation(scene)
+	_test_every_codex_link_in_the_ui_resolves(scene)
+	_test_reaching_a_milestone_is_announced(scene)
 	if failures.is_empty():
 		print("PASS: %d build flow checks" % checks)
 		quit(0)
@@ -171,6 +173,14 @@ func _test_the_objective_tracks_the_simulation(scene: Node) -> void:
 	_equal(objectives.size(), published.size(),
 		"every published milestone has an objective, and none is invented")
 
+	# "Open objective help" is only useful if the entry it points at exists. These ids cross
+	# from the objective table into the Codex, which is the same kind of boundary the milestone
+	# keys crossed, so it gets the same test rather than a second silent dead end.
+	var codex: Variant = scene.get("_physics_codex")
+	for step: Dictionary in objectives:
+		_check(not codex.get_entry(str(step.help)).is_empty(),
+			"objective help id '%s' resolves to a Codex entry" % str(step.help))
+
 	# And the objective the player is shown has to be the first unmet one, not a fixed string.
 	var hud: Variant = scene.get("factory_hud")
 	scene.call("_update_phase135_feedback")
@@ -181,6 +191,82 @@ func _test_the_objective_tracks_the_simulation(scene: Node) -> void:
 			expected = str(step.title)
 			break
 	_equal(shown, expected, "the objective shown is the first unmet milestone")
+
+
+func _test_every_codex_link_in_the_ui_resolves(scene: Node) -> void:
+	# Every Codex id the UI can send the player to, gathered from the source rather than
+	# retyped here, so this cannot pass by agreeing with itself. Three of these were dead when
+	# the objective table first shipped them, and a dead help link is the same silent dead end
+	# as a swallowed click: the player asks the game a question and gets nothing.
+	var codex: Variant = scene.get("_physics_codex")
+	var ids := _codex_ids_referenced_in_source()
+	_check(ids.size() > 30, "found the Codex links in the source (%d)" % ids.size())
+	var dead: Array[String] = []
+	for id: String in ids:
+		if codex.get_entry(id).is_empty(): dead.append(id)
+	_equal(", ".join(dead), "", "every Codex link the UI offers resolves to an entry")
+
+
+func _codex_ids_referenced_in_source() -> Array[String]:
+	var found := {}
+	var pattern := RegEx.new()
+	pattern.compile('"(concept|component|material|research|blueprint):[a-z0-9_.]+"')
+	for root in ["res://debug", "res://rendering", "res://core"]:
+		for path in _scripts_under(root):
+			var file := FileAccess.open(path, FileAccess.READ)
+			if file == null: continue
+			var text := file.get_as_text()
+			for hit in pattern.search_all(text):
+				found[hit.get_string().substr(1, hit.get_string().length() - 2)] = true
+	var ids: Array[String] = []
+	for key: Variant in found.keys(): ids.append(str(key))
+	ids.sort()
+	return ids
+
+
+func _test_reaching_a_milestone_is_announced(scene: Node) -> void:
+	# _last_milestones was written every frame and never read, so the arc the objective walks
+	# the player through was completed in silence: you achieve the thing the game asked for and
+	# it says nothing at all.
+	var hud: Variant = scene.get("factory_hud")
+	var objectives: Array = scene.get("MILESTONE_OBJECTIVES")
+	var first_key: String = str((objectives[0] as Dictionary).key)
+
+	# A session that has already seen state does not replay it, so seed the previous frame.
+	var seeded := {}
+	for step: Dictionary in objectives: seeded[str(step.key)] = false
+	scene.set("_last_milestones", seeded)
+	hud.show_notification("", "INFO")
+
+	var reached := seeded.duplicate()
+	reached[first_key] = true
+	scene.call("_announce_reached_milestones", reached)
+	_check(hud.last_notification().contains(str((objectives[0] as Dictionary).title)),
+		"reaching a milestone is announced: '%s'" % hud.last_notification())
+
+	# And a session that starts already holding milestones stays quiet.
+	scene.set("_last_milestones", {})
+	hud.show_notification("", "INFO")
+	scene.call("_announce_reached_milestones", reached)
+	_check(hud.last_notification().is_empty(),
+		"a loaded save does not replay its whole history as notifications")
+
+
+func _scripts_under(root: String) -> Array[String]:
+	var paths: Array[String] = []
+	var directory := DirAccess.open(root)
+	if directory == null: return paths
+	directory.list_dir_begin()
+	var name := directory.get_next()
+	while not name.is_empty():
+		var full := "%s/%s" % [root, name]
+		if directory.current_is_dir():
+			if not name.begins_with("."): paths.append_array(_scripts_under(full))
+		elif name.ends_with(".gd"):
+			paths.append(full)
+		name = directory.get_next()
+	directory.list_dir_end()
+	return paths
 
 
 func _check(condition: bool, label: String) -> void:

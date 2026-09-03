@@ -34,6 +34,9 @@ None known after the Phase 13.9 verification gate.
   ones the simulation publishes, and the first key was among them, so the objective read "Move
   physical material" for the entire game regardless of progress. Its criteria were also the same
   three generic words on every step.
+- **Reaching a milestone was never acknowledged:** `_last_milestones` was recorded every frame
+  and read by nothing, so completing the objective the game asked for produced no message and no
+  sound.
 - **The first quickbar page was mostly locked:** six of ten entries were Pipe components a new
   Factory player cannot build.
 - **Subsurface Channels claimed to be unlocked:** their catalog entry never set a locked flag

@@ -125,6 +125,27 @@ the owner the most:
 > **Move physical material**
 > Place a Conveyor in open air above the ground · Drop matter onto it · Watch it travel
 
+## 6. Reaching a milestone was never acknowledged
+
+`_last_milestones` was recorded on every frame and read by nothing. So the arc the objective
+walks the player through was also completed in silence: you do the thing the game asked for, the
+objective quietly changes to the next one, and nothing tells you that you succeeded.
+
+Reaching a milestone now says so. The first observation of a session is skipped, so loading a
+save does not replay the whole run as a burst of notifications.
+
+## 7. Three help links pointed at nothing
+
+The objective table in §5 carries a Codex id for its "Open objective help" button, and three of
+the seven ids I first wrote did not exist -- `concept:separation`, `concept:wet_processing` and
+`concept:thermal`, against the real `concept:screening`, `concept:wet_separation` and
+`concept:heat`. That is the same defect as §5, introduced by the fix for §5, which is a fair
+illustration of why the boundary needs a test rather than care.
+
+`tests/build_flow.gd` now gathers every Codex id referenced anywhere under `debug/`, `rendering/`
+and `core/` **from the source files themselves**, and asserts each one resolves to an entry. It
+cannot pass by agreeing with a list this test also wrote.
+
 ---
 
 ## Verification
@@ -136,7 +157,7 @@ refusal said nothing.
 
 | | Result |
 | --- | --- |
-| `tests/build_flow.gd` | 49 checks |
+| `tests/build_flow.gd` | 63 checks |
 | `scripts/test.ps1` | `TEST_SUITE_PASS scripts=35` |
 | `tests/phase139_ftue.gd` | 329 checks |
 | `tests/phase139b_layout.gd` | 237 checks |
