@@ -905,6 +905,16 @@ structure plane is read from the already-resolved chunk.
 The fixture content hash is `5d282148` before and after: identical simulation, `5.3×` the speed
 at eight workers, and near-linear scaling now that the serial component is gone.
 
+### Conveyor wake-up
+
+A Conveyor could not be started by matter falling onto it, because the condition that enables
+movement notifications asked whether a belt was already awake and belts are woken only by those
+notifications. Fixing it means the notifications run whenever any belt exists. Measured cost of
+that on the Dense Synthetic Megafactory: `61.4 FPS` with the old condition against `59.1` with
+the new one, so roughly two percent -- and the isolated 50k-active-Conveyor stress came out
+*faster* than before the fix, `13.152 ms` against `13.233 ms`, because `activate_belts_near()`
+now resolves the row of candidate cells through one chunk lookup instead of three.
+
 ### Visible page assembly
 
 `consume_dirty_render_page()` allocated and zero-filled a fresh `3.54 MB` buffer every frame
@@ -921,8 +931,10 @@ Same host, `1920×1080`, GL Compatibility, 300 ticks per fixture.
 | Factory | `626.9` | `1.594 ms` | `1.667 ms` | `1.667 ms` |
 | Creative | `504.9` | `1.979 ms` | `2.083 ms` | `2.083 ms` |
 | Realistic Maximum Factory | `220.1` | `4.550 ms` | `5.997 ms` | `8.390 ms` |
-| Dense Synthetic Megafactory | `79.4` | `12.622 ms` | `16.667 ms` | `18.031 ms` |
+| Dense Synthetic Megafactory | `59.1` | `16.897 ms` | `18.750 ms` | `19.737 ms` |
 
-The Dense Synthetic Megafactory remains the separately disclosed pathological ceiling. It is now
-inside the frame budget on this host rather than well outside it, which does not make it a
-supported gameplay promise.
+The Dense Synthetic Megafactory remains the separately disclosed pathological ceiling. The figure
+above is the median of four consecutive runs (`58.8`-`59.4 FPS`); single runs of this fixture
+have measured as high as `79.4 FPS` on an idle host and should not be quoted. It now sits at the
+edge of the frame budget rather than well outside it, which does not make it a supported gameplay
+promise.

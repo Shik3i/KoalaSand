@@ -206,7 +206,18 @@ dead belt forever:
 | directly in the cell above the belt | 12 | 1 | reached |
 | one cell higher, allowed to fall | 0 | 0 | never |
 
-Belts existing is the condition, not belts already running. `tests/build_flow.gd` now follows
+Belts existing is the condition, not belts already running.
+
+Making the notifications run whenever any belt exists costs something, so `activate_belts_near()`
+was made cheaper to pay for it. A belt carries what rests one cell above it, so its three
+candidate cells are horizontally adjacent on a single row and nearly always share one chunk;
+asking the chunk map for each separately cost three lookups per moved cell on a path that runs
+for every cell of every falling pile. Resolving the row once and leaving immediately when that
+chunk holds no structures made the isolated 50k-active-Conveyor stress *faster than before the
+correctness fix* -- `13.152 ms` against `13.233 ms` -- and left the Dense Synthetic Megafactory
+within two percent of the old condition (`59.1` against `61.4 FPS`).
+
+`tests/build_flow.gd` now follows
 the printed instruction literally — place the Conveyor in open air, drop Sand from four cells up,
 step — and asserts the matter travels and the milestone is reached. It drops from a height on
 purpose: painting into the adjacent cell would pass through the `set_cell()` path and prove

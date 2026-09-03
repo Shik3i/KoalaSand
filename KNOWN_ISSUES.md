@@ -8,7 +8,7 @@ None known after the Phase 13.9 verification gate.
 
 ## P1
 
-- **Dense synthetic Megafactory:** intentionally pathological density now measures `79.4 FPS`, `16.667 ms` p95 and `18.031 ms` p99, up from `43.7 FPS` / `25.000 ms` / `27.905 ms`. It is still reported separately from the realistic maximum-factory gate; see [PERFORMANCE.md](PERFORMANCE.md).
+- **Dense synthetic Megafactory:** intentionally pathological density now measures `59.1 FPS`, `18.750 ms` p95 and `19.737 ms` p99 as the median of four consecutive runs, up from `43.7 FPS` / `25.000 ms` / `27.905 ms`. Single runs of this fixture have measured as high as `79.4 FPS` on an idle host and should not be quoted. It is still reported separately from the realistic maximum-factory gate; see [PERFORMANCE.md](PERFORMANCE.md).
 - **Factory Mode offers tools its capability table forbids:** `GameModeCapabilities` declares
   `creative_paint`, `creative_erase` and `world_edit` Creative-only, Factory Mode runs
   `ProgressionMode.NORMAL`, and yet the Factory quickbar offers raw material brushes and nothing

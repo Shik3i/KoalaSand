@@ -1332,6 +1332,18 @@ bool NativeSandWorld::should_collect_matter_changes() const {
 }
 
 void NativeSandWorld::apply_matter_notifications(const std::vector<MatterJobResult> &results) {
+    // Which subsystems can do anything at all, asked once instead of once per moved cell.
+    //
+    // Each of these calls already returns immediately when its own container is empty, but only
+    // after a hash lookup -- and activate_physical_near() does nine of them, one per chunk in a
+    // 3x3 neighbourhood. A wall of falling Sand in a world that contains belts and nothing else
+    // was paying roughly sixteen lookups per moved cell so that one of them could matter.
+    const bool has_belts = belts_total_ > 0;
+    const bool has_machine_ports = !machine_port_watchers_.empty();
+    const bool has_subsurface = !subsurface_cell_watchers_.empty();
+    const bool has_physical = !physical_chunk_watchers_.empty();
+    const bool has_pipes = !pipe_segments_.empty();
+    const bool has_automation = !automation_cell_watchers_.empty() || !blocked_gate_components_.empty();
     bool changed = false;
     for (const MatterJobResult &result : results) {
         changed = changed || result.transfers > 0 || result.displaced > 0;
@@ -1340,12 +1352,12 @@ void NativeSandWorld::apply_matter_notifications(const std::vector<MatterJobResu
             activate_reactive_cell(cell);
         }
         for (const Vector2i cell : result.changed_cells) {
-            activate_belts_near(cell);
-            activate_machines_at_port(cell);
-            wake_subsurface_at(cell);
-            activate_physical_near(cell);
-            wake_pipe_neighbors(cell);
-            notify_automation_cell_change(cell);
+            if (has_belts) activate_belts_near(cell);
+            if (has_machine_ports) activate_machines_at_port(cell);
+            if (has_subsurface) wake_subsurface_at(cell);
+            if (has_physical) activate_physical_near(cell);
+            if (has_pipes) wake_pipe_neighbors(cell);
+            if (has_automation) notify_automation_cell_change(cell);
         }
     }
     if (changed) ++fluid_render_revision_;
@@ -3416,12 +3428,36 @@ Array NativeSandWorld::consume_dirty_structure_chunks() {
     return result;
 }
 
+// Wake any Conveyor that could carry matter now sitting in this cell.
+//
+// A belt carries what rests one cell above it, so the three candidates are horizontally
+// adjacent on a single row and nearly always share one chunk. Asking the chunk map for each of
+// them separately cost three lookups per moved cell, on a path that runs for every cell of
+// every falling pile as soon as a world contains any belt at all. Resolve the row once, and
+// leave immediately when that chunk holds no structures -- which is most of the world.
 void NativeSandWorld::activate_belts_near(Vector2i material_cell) {
     if (belts_total_ == 0) return;
+    const Vector2i below = material_cell + Vector2i(0, 1);
+    const Vector2i row_chunk = world_to_chunk(below);
+    const Chunk *chunk = get_chunk(row_chunk);
+    const Vector2i local = below - row_chunk * CHUNK_SIZE;
     for (int32_t offset_x = -1; offset_x <= 1; ++offset_x) {
-        const Vector2i belt = material_cell + Vector2i(offset_x, 1);
-        const int32_t type_id = get_structure(belt);
-        if (type_id == STRUCTURE_CONVEYOR_LEFT || type_id == STRUCTURE_CONVEYOR_RIGHT) active_belts_.insert(cell_key(belt));
+        const int32_t column = local.x + offset_x;
+        const Chunk *holder = chunk;
+        int32_t index = 0;
+        if (static_cast<uint32_t>(column) < static_cast<uint32_t>(CHUNK_SIZE)) {
+            if (holder == nullptr || holder->structures == nullptr) continue;
+            index = local.y * CHUNK_SIZE + column;
+        } else {
+            // Only the two cells that fall off the edge of the row need their own lookup.
+            const Vector2i belt = below + Vector2i(offset_x, 0);
+            holder = get_chunk(world_to_chunk(belt));
+            if (holder == nullptr || holder->structures == nullptr) continue;
+            index = local_index(world_to_local(belt));
+        }
+        const int32_t type_id = (*holder->structures)[index] & 0x7fu;
+        if (type_id == STRUCTURE_CONVEYOR_LEFT || type_id == STRUCTURE_CONVEYOR_RIGHT)
+            active_belts_.insert(cell_key(below + Vector2i(offset_x, 0)));
     }
 }
 

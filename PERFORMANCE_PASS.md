@@ -222,13 +222,18 @@ which is what the fresh allocation was really providing.
 
 Dense synthetic Megafactory, 1080p windowed:
 
-| | Documented | After granular | After render page |
-| --- | ---: | ---: | ---: |
-| FPS | 43.7 | 69.0 | **79.4** |
-| frame mean | — | 14.47 ms | **12.62 ms** |
-| p95 | 25.000 ms | 17.17 ms | **16.67 ms** |
-| p99 | 27.905 ms | 19.29 ms | **18.03 ms** |
-| worst | — | 25.02 ms | **19.18 ms** |
+| | Documented | After this pass |
+| --- | ---: | ---: |
+| FPS | 43.7 | **59.1** |
+| frame mean | — | **16.90 ms** |
+| p95 | 25.000 ms | **18.75 ms** |
+| p99 | 27.905 ms | **19.74 ms** |
+
+Corrected after the fact. The single runs taken during this pass measured `69.0` and then `79.4
+FPS`, and I reported the best of them. Four consecutive runs later measured `58.8`, `59.4`,
+`58.8` and `59.1`, so the earlier figures were an idle-host outlier rather than the result. This
+fixture is the most loaded in the suite and the least stable to measure; one run of it is not a
+number.
 
 ---
 
