@@ -68,6 +68,8 @@ func _run(scene: Node) -> void:
 	_test_the_route_to_a_concentrate_exists_and_works(scene)
 	_test_the_route_through_water_exists_and_works(scene)
 	_test_no_promise_names_a_machine_the_catalog_does_not_have(scene)
+	_test_the_catalog_offers_every_component_that_is_meant_to_be_offered(scene)
+	_test_a_belt_can_be_built_in_both_directions(scene)
 	if failures.is_empty():
 		print("PASS: %d build flow checks" % checks)
 		quit(0)
@@ -553,19 +555,72 @@ func _test_no_promise_names_a_machine_the_catalog_does_not_have(scene: Node) -> 
 		surfaces.append(["research %s effect" % str(research.get("id", "?")), str(research.get("effect", ""))])
 		surfaces.append(["research %s description" % str(research.get("id", "?")), str(research.get("description", ""))])
 
-	# One surface is a known, undecided contradiction rather than a text slip:
-	# thermal.cookware gates only the Iron Pot, and the Pot is in DEV_TYPES. Researching
-	# Cookware therefore costs 900 research and 60 Iron and unlocks nothing the player can
-	# place. PHYSICAL_COOKING.md calls the Pot "a minimal cooking proof, not survival
-	# gameplay", so the fix is either to retire the research node or to put the Pot in the
-	# catalog -- an owner decision, not a wording change. It is listed here so that it cannot
-	# be forgotten and so that no second one can appear beside it unnoticed.
-	const KNOWN_UNRESOLVED := ["research thermal.cookware effect"]
-
 	var violations: Array[String] = []
 	for surface: Array in surfaces:
 		for name: String in forbidden:
 			if str(surface[1]).contains(name): violations.append(str(surface[0]))
 	violations.sort()
-	_equal(violations, KNOWN_UNRESOLVED,
+	_equal(violations, [] as Array[String],
 		"no player-facing promise names a machine the catalog does not have")
+
+
+func _test_the_catalog_offers_every_component_that_is_meant_to_be_offered(scene: Node) -> void:
+	# The Build Catalog is a hand-written list in factory_hud.gd, and the structure table it is
+	# supposed to mirror lives in native_sand_world.cpp. Nothing connected the two, so a
+	# Component could be defined, unlockable, gated by its own research node and simply never
+	# offered -- which is what happened to the Iron Pot: thermal.cookware charged 900 Glass and
+	# 60 Iron to unlock something no player could reach. is_player_facing() is the rule for what
+	# belongs in the catalog, so it is the rule this checks against.
+	var world: Variant = scene.get("world")
+	var hud: Variant = scene.get("factory_hud")
+	var offered := {}
+	for tool: Dictionary in hud.get_meta("catalog_tools", []):
+		if str(tool.get("kind", "")) == "structure": offered[int(tool.get("id", -1))] = true
+		# A Subsurface Channel is one catalog entry per depth and two structures -- an entrance
+		# and an exit -- placed together by a drag, so the six of them are offered under their
+		# own kind rather than as Components.
+		elif str(tool.get("kind", "")) == "subsurface":
+			var depth := int(tool.get("depth", 0))
+			offered[18 + depth * 2] = true
+			offered[19 + depth * 2] = true
+
+	var missing: Array[String] = []
+	for definition: Dictionary in world.get_structure_definitions():
+		var type_id := int(definition.get("type_id", -1))
+		if not ComponentPresentation.is_player_facing(type_id, definition): continue
+		if not offered.has(type_id):
+			missing.append("%d %s" % [type_id, str(definition.get("display_name", ""))])
+	missing.sort()
+	_equal(missing, [] as Array[String], "every player-facing Component is in the Build Catalog")
+
+
+func _test_a_belt_can_be_built_in_both_directions(scene: Node) -> void:
+	# The catalog listed one Conveyor, and _place_conveyor_drag() reads the direction straight off
+	# the selected type: "-1 if build_structure_type == 1 else 1". Type 1 was not selectable, so
+	# every belt a player could build in a factory game ran to the right. Both are listed now, and
+	# this is the check that the second one is not merely a second name for the first.
+	var world: Variant = scene.get("world")
+	world.set_game_mode(1)
+	var origin := Vector2i(2100, 300)
+	world.paint_stroke(origin - Vector2i(16, 16), origin + Vector2i(16, 10), 16, EMPTY_MATERIAL)
+	for x in range(origin.x - 12, origin.x + 13):
+		world.set_cell(Vector2i(x, origin.y + 1), STONE)
+
+	var moved := {}
+	for direction in [-1, 1]:
+		# Two rows well apart, so neither run has to be torn down before the other is built.
+		var row := origin.y - (2 if direction < 0 else 6)
+		_check(int(world.place_conveyor_line(Vector2i(origin.x - 8, row), Vector2i(origin.x + 8, row), direction)) > 0,
+			"a belt can be placed running %s" % ("left" if direction < 0 else "right"))
+		var start := Vector2i(origin.x, row - 1)
+		world.set_cell(start, SAND)
+		# Six ticks, not thirty: a belt carries about a cell a tick, and a grain that runs off the
+		# end of a seventeen-cell run falls to the floor and stops being evidence of anything.
+		for _tick in range(6): world.step()
+		var landed := 0
+		for offset in range(-10, 11):
+			if int(world.get_cell(start + Vector2i(offset, 0))) == SAND: landed = offset * direction
+		moved[direction] = landed
+
+	_check(int(moved[1]) > 0, "matter on a right-hand belt travels right (%d cells)" % int(moved[1]))
+	_check(int(moved[-1]) > 0, "matter on a left-hand belt travels left (%d cells)" % int(moved[-1]))

@@ -96,46 +96,101 @@ the objectives now name them.
 
 `tests/build_flow.gd` asserts both mechanics fire, and then sweeps every objective criterion and
 every research description and reward line for the display name of any `DEV_TYPE`. That sweep
-found a sixth instance I had not: see below.
+found a sixth instance I had not, and pulling on it found something wording could not fix: see
+below. The sweep now has to come back empty.
 
 ---
 
-## 3. Research that charges for an effect the player cannot receive
+## 3. Research that charged for an effect the player could never receive
 
-Found by the sweep above, then traced. This one is **not fixed**, because both repairs are
-design decisions.
+Found by the sweep above, then traced.
 
 `is_physical_processor()` is true for exactly four structures -- the same four dev fixtures. So
 `native_physical_processing.cpp` in its entirety -- heaters, screens, magnets, wet sluices -- is
 reachable only through machines excluded from the catalog. Every research node whose effect
-lands there is inert in a normal game:
+landed there was inert in a normal game, and `split_into_ledger()`, which is what the composable
+geometry actually runs, read no research at all.
 
-| Node | Cost (Glass / Iron / Gold) | Effect reaches |
-| --- | ---: | --- |
-| `furnace.fuel_economy_1` | 1200 / 30 / 0 | `furnace_fuel_units()`, dev furnace only |
-| `furnace.throughput_1` | 2200 / 80 / 0 | heater divisor + `STRUCTURE_FURNACE` cadence |
-| `logistics.high_throughput_handling` | 3500 / 180 / 0 | `STRUCTURE_MAGNETIC_SEPARATOR` cadence |
-| `processing.precision_screening` | 4000 / 250 / 1 | `STRUCTURE_SIEVE` process id |
-| `processing.concentrate_recovery` | 6000 / 400 / 2 | furnace branch of `process_machines()` |
-| `thermal.cookware` | 900 / 60 / 0 | gates only the Iron Pot, itself a `DEV_TYPE` |
+`processing.concentrate_recovery` is the most expensive node a player can see, at 6000 Glass, 400
+Iron and 2 Gold, and two of the other dead nodes are prerequisites on the path to it.
 
-`split_into_ledger()` -- the function the composable geometry actually runs -- reads no research
-at all. `is_processing_machine()` returns true only for the Research Bank, so the furnace branch
-`processing.concentrate_recovery` upgrades is dead code.
+Each node now lands on the route that does the work its own description names. Two of them did
+not need a new design at all: `processing_result()` still spells out what those upgrades meant
+when processing ran through machines, so the same distinction simply moved to the geometry.
 
-`processing.concentrate_recovery` is the most expensive node a player can see, and two of the
-others are prerequisites on the path to it.
+| Node | Cost (Glass / Iron / Gold) | Was | Now |
+| --- | ---: | --- | --- |
+| `processing.precision_screening` | 4000 / 250 / 1 | dev sieve process id | A Mesh Screen sends the heavy mineral to the concentrate instead of letting it dilute the fines |
+| `processing.concentrate_recovery` | 6000 / 400 / 2 | dead furnace branch | The thermal route recovers a concentrate's heavy fraction as Iron rather than residue |
+| `logistics.high_throughput_handling` | 3500 / 180 / 0 | dev magnet cadence | A Processing Component buffers twice as much while its outputs are blocked |
+| `furnace.throughput_1` | 2200 / 80 / 0 | dev heater divisor | Refractory geometry reacts a second cell in the same tick |
+| `furnace.fuel_economy_1` | 1200 / 30 / 0 | dev furnace fuel | Thermal Insulators stop conducting heat across themselves |
+| `thermal.cookware` | 900 / 60 / 0 | gated a hidden fixture | Unlocks the Iron Pot, now in the catalog |
 
-The two repairs are different games: retire the nodes, or re-point their effects at
-`split_into_ledger()` and `process_component_processing()`. That is an owner call. The wording of
-every node was corrected in this pass; the economics were not. The single remaining text surface
-that still names a dev fixture (`thermal.cookware` -> "Unlock Iron Pot") is pinned in
-`tests/build_flow.gd` as a known exception, so it cannot be forgotten and no second one can
-appear beside it unnoticed.
+Two of those deserve their reasoning stated.
+
+**The Insulator.** Every structure from 37 to 44 bridges heat across itself between its two
+opposite neighbours, which is how a hot enclosure bleeds into whatever it stands next to. The
+coefficient is `conductivity / 16` with a floor of 1, and the Insulator's conductivity is 2 --
+already at that floor. Halving it would have done nothing, which is exactly the kind of upgrade
+that looks implemented and is not. The researched Insulator does not bridge at all; the cells
+either side still exchange heat with everything else normally.
+
+**The Iron Pot.** Retiring `thermal.cookware` was the other option. `PHYSICAL_COOKING.md`
+documents the Pot as an implemented vessel with a thermal bridge, a cavity of ordinary world
+cells and a rejection rule against removing it while full, and the research node for it already
+existed. It was sitting in `DEV_TYPES` next to the Ceramic Test Vessel, which really is a
+fixture and stays hidden. Putting the Pot in the catalog makes the node's existing promise true
+rather than deleting a feature that works.
+
+`tests/research_effects.gd` runs each scenario twice against the same seed and the same cells,
+once without the research and once with, and asserts the numbers move. A test of only the
+researched run would pass just as well if the effect were unconditional. It also pins two things
+that keep the upgrades honest: Concentrate Recovery must leave unconcentrated Raw Sand exactly
+alone, and both splitting upgrades must move mass between channels without creating or
+destroying any.
+
+Getting those measurements to mean anything took three corrections to the test itself, each of
+which was the simulation being right and the scenario being wrong: a grain dropped on a Mesh
+Screen falls straight through, because a deck is permeable by design; a grain with an empty cell
+below and to one side runs diagonally away before the component looks at it; and a long run
+measures the buffer depth both configurations share rather than the rate that separates them.
 
 ---
 
-## 4. What a stranger sees that the owner does not
+## 4. Components the game unlocks and never offers
+
+Fixing the Iron Pot exposed the mechanism behind it. The Build Catalog is a **hand-written list**
+in `factory_hud.gd`; the structure table it is meant to mirror lives in `native_sand_world.cpp`.
+Nothing connected the two, so a Component could be defined, gated by its own research node, and
+simply never listed. Three were:
+
+- **Iron Pot** (35) -- `thermal.cookware`, 900 Glass and 60 Iron, unlocked nothing placeable.
+- **Control Gate** (9) -- `automation.advanced_routing` costs 4200 Glass, 220 Iron and 1 Gold and
+  its reward line reads "Unlock Control Gate". The Gate was not in the catalog either.
+- **Conveyor Left** (1) -- and this one is not about research at all.
+
+The last is the worst of the three. `_place_conveyor_drag()` reads the belt's direction straight
+off the selected type:
+
+```gdscript
+"direction": -1 if build_structure_type == 1 else 1,
+```
+
+The catalog offered a single entry called "Conveyor", type 2. Type 1 was not selectable by any
+means. **Every belt a player could build in this factory game ran to the right.** The entry is now
+"Conveyor Right" with "Conveyor Left" beside it, and `tests/build_flow.gd` builds one of each and
+watches a grain travel the correct way along both -- a second name for the same structure would
+have passed a weaker check.
+
+`tests/build_flow.gd` also now asserts that every structure `is_player_facing()` accepts appears
+in the catalog, which is the rule the catalog was supposed to follow and the drift that let all
+three through. The catalog is 72 cards, and the responsive layout test reports no overflow at any
+of the twelve resolution and scale combinations it covers.
+
+---
+
+## 5. What a stranger sees that the owner does not
 
 **The build shipped the default Godot icon** -- taskbar, window and executable. A public download
 that looks like an untitled Godot project reads as unfinished before it opens. There is now an
@@ -152,7 +207,7 @@ now 1280x720.
 
 ---
 
-## 5. What was verified rather than assumed
+## 6. What was verified rather than assumed
 
 - **The release package builds and runs.** `scripts/package_playtest.ps1` produced a 39.5 MB
   archive. Launched from the package directory with an isolated profile, the exported build
@@ -168,9 +223,8 @@ now 1280x720.
 
 ---
 
-## 6. Left for an owner decision
+## 7. Left for an owner decision
 
-- **The research economics above.**
 - **Release identity.** `config/version` still reads `0.1.0-playtest.5`, the package is named
   after it, and `README-PLAYTEST.txt` opens with "Owner first-play build". It also asks for bug
   reports without naming anywhere to send them -- there is no channel yet.
@@ -188,14 +242,15 @@ now 1280x720.
 
 ---
 
-## 7. Gates
+## 8. Gates
 
 | Gate | Result |
 | --- | --- |
-| `scripts/test.ps1` | `TEST_SUITE_PASS scripts=36` |
+| `scripts/test.ps1` | `TEST_SUITE_PASS scripts=37` |
 | `scripts/benchmark.ps1` | `BENCHMARK_SUITE_PASS scripts=30` |
-| `tests/build_flow.gd` | 100 checks |
+| `tests/build_flow.gd` | 105 checks |
 | `tests/fault_guard.gd` | 21 checks |
+| `tests/research_effects.gd` | 21 checks |
 | `scripts/package_playtest.ps1` | archive produced, exported build launches |
 
 The complaint that started this run of work -- painting dropped the game to zero frames -- was

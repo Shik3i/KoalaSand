@@ -252,6 +252,7 @@ void NativeSandWorld::_bind_methods() {
     ClassDB::bind_method(D_METHOD("harvest_stroke", "from_cell", "to_cell", "radius"), &NativeSandWorld::harvest_stroke);
     ClassDB::bind_method(D_METHOD("get_hidden_constituent", "profile_id", "mineral_signature"), &NativeSandWorld::get_hidden_constituent);
     ClassDB::bind_method(D_METHOD("process_material_for_test", "material_id", "profile_id", "mineral_signature", "process_id"), &NativeSandWorld::process_material_for_test);
+    ClassDB::bind_method(D_METHOD("split_composition_for_test", "material_id", "profile_id", "mineral_signature", "route"), &NativeSandWorld::split_composition_for_test);
     ClassDB::bind_method(D_METHOD("fill_rect", "area", "material_id", "spacing"), &NativeSandWorld::fill_rect, DEFVAL(1));
     ClassDB::bind_method(D_METHOD("allocate_chunk_rect", "chunk_area"), &NativeSandWorld::allocate_chunk_rect);
     ClassDB::bind_method(D_METHOD("finalize_initialization"), &NativeSandWorld::finalize_initialization);
@@ -2767,7 +2768,7 @@ const std::vector<NativeSandWorld::StructureDefinition> &NativeSandWorld::struct
          {{0,0},{1,0},{2,0},{0,1},{1,1},{2,1},{0,2},{1,2},{2,2}}, {}, {}},
         {34, "Resistive Heater", "Power", "power.electrified_industry", 3, 2, false, true,
          {{0,0},{1,0},{2,0},{0,1},{1,1},{2,1}}, {}, {}},
-        {35, "Iron Pot", "Dev Fixture", "", 9, 6, false, false,
+        {35, "Iron Pot", "Thermal", "thermal.cookware", 9, 6, false, false,
          {{0,0},{8,0},{0,1},{8,1},{0,2},{8,2},{0,3},{8,3},{0,4},{8,4},
           {0,5},{1,5},{2,5},{3,5},{4,5},{5,5},{6,5},{7,5},{8,5}}, {}, {}},
         {36, "Ceramic Test Vessel", "Test", "", 9, 6, false, false,
@@ -2795,12 +2796,12 @@ const std::vector<NativeSandWorld::ResearchDefinition> &NativeSandWorld::researc
         {"mobility.hover", "Hover / Precision Flight", "Stabilize the Basic Jetpack for precise mid-air factory construction.", {"mobility.sprint", "automation.basic_sensing"}, 1800, 90, 1, "Unlock Hover toggle", 1, 2},
         {"processing.dry_separation", "Dry Separation", "Physically screen Raw Sand by stable grain size.", {"foundation.basic_industry"}, 2400, 40, 0, "Unlock Mesh Screen and Vibration Actuator", 0, 1},
         {"logistics.belt_drive_1", "Belt Drive I", "Double Basic Conveyor transfer cadence.", {"foundation.basic_industry"}, 1000, 25, 0, "Belts: 1 cell/tick", 2, 1},
-        {"furnace.fuel_economy_1", "Thermal Efficiency I", "Reduce distance-based heat loss across the open radiant bay.", {"foundation.basic_industry"}, 1200, 30, 0, "Heat attenuation: 450 to 325 per cell", 4, 1},
+        {"furnace.fuel_economy_1", "Thermal Efficiency I", "Stop heat leaking sideways through the Insulators that line an enclosure.", {"foundation.basic_industry"}, 1200, 30, 0, "Thermal Insulators stop conducting heat", 4, 1},
         {"processing.ferrous_separation", "Ferrous Separation", "Lift susceptible grains from a moving physical stream.", {"processing.dry_separation"}, 3000, 180, 0, "Unlock Electromagnet and Metal Plate", 0, 2},
-        {"furnace.throughput_1", "Radiant Intensity I", "Increase physical heat flux into exposed moving material.", {"furnace.fuel_economy_1"}, 2200, 80, 0, "Radiant field strength: 2500 to 3000", 4, 2},
-        {"logistics.high_throughput_handling", "High-Throughput Handling", "Improve capture transport and physical feed handling.", {"processing.dry_separation", "logistics.belt_drive_1"}, 3500, 180, 0, "Overbelt capture cadence", 2, 3},
-        {"processing.precision_screening", "Precision Screening", "Refine physical deck aperture and screening opportunity.", {"processing.ferrous_separation"}, 4000, 250, 1, "Screen aperture: precision_1", 0, 3},
-        {"processing.concentrate_recovery", "Concentrate Recovery", "Improve thermal reaction selectivity for physically separated concentrates.", {"processing.ferrous_separation", "furnace.throughput_1", "logistics.high_throughput_handling"}, 6000, 400, 2, "Concentrate thermal reactions: recovery_1", 2, 4},
+        {"furnace.throughput_1", "Radiant Intensity I", "React more of what a hot enclosure is already holding, in the same tick.", {"furnace.fuel_economy_1"}, 2200, 80, 0, "Refractory geometry reacts two cells per tick", 4, 2},
+        {"logistics.high_throughput_handling", "High-Throughput Handling", "Keep a Component fed while whatever clears its outputs catches up.", {"processing.dry_separation", "logistics.belt_drive_1"}, 3500, 180, 0, "Components buffer twice as much when blocked", 2, 3},
+        {"processing.precision_screening", "Precision Screening", "Refine the deck aperture so the heavy mineral stops diluting the fines.", {"processing.ferrous_separation"}, 4000, 250, 1, "Mesh Screens send heavy mineral to the concentrate", 0, 3},
+        {"processing.concentrate_recovery", "Concentrate Recovery", "Recover metal from a concentrate that a raw reaction would vitrify.", {"processing.ferrous_separation", "furnace.throughput_1", "logistics.high_throughput_handling"}, 6000, 400, 2, "Concentrates yield their heavy fraction as Iron", 2, 4},
         {"automation.basic_sensing", "Basic Sensing", "Read visible material and physical fill without geological leakage.", {"foundation.basic_industry"}, 800, 15, 0, "Wire, Manual Switch, Material Sensor, Level Sensor", 6, 1},
         {"automation.logic_control", "Logic Control", "Combine integer signals with deterministic one-tick logic.", {"automation.basic_sensing"}, 1600, 50, 0, "NOT, AND, OR, Comparator", 6, 2},
         {"automation.machine_control", "Machine Control", "Sense and enable processors and individual Conveyors.", {"automation.logic_control", "processing.dry_separation"}, 2800, 140, 0, "Machine telemetry, Machine ENABLE, Conveyor control", 5, 3},

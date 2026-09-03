@@ -245,24 +245,43 @@ NativeSandWorld::ConstituentMass NativeSandWorld::take_quantum(ConstituentMass &
     return result;
 }
 
-void NativeSandWorld::split_into_ledger(FractionalMassLedger &ledger, const ConstituentMass &input, int32_t route) const {
+// Two research nodes reach into this function, and both use the definition the game already
+// had for them. Processing used to run through machines, and processing_result() still spells
+// out what each upgrade meant there: PROCESS_SIEVE_PRECISION differs from PROCESS_SIEVE by
+// sending the heavy mineral to the concentrate instead of letting it dilute the fines, and
+// PROCESS_FURNACE_RECOVERY differs from PROCESS_FURNACE_RAW by recovering more metal out of a
+// concentrate instead of dropping it into residue. Those machines are dev fixtures now and the
+// player builds geometry, so the same two upgrades land here, on the routes that geometry runs.
+void NativeSandWorld::split_into_ledger(FractionalMassLedger &ledger, const ConstituentMass &input, int32_t route,
+                                        int32_t input_material) const {
     ledger.input_micro_mass += composition_total(input);
     if (route == 0) { // Selective Gold recovery fixture.
         ledger.output_material = {GOLD, CRUDE_RESIDUE, 0, 0};
         ledger.pending[0][3] += input[3];
         for (int32_t c = 0; c < CONSTITUENT_COUNT; ++c) if (c != 3) ledger.pending[1][c] += input[c];
     } else if (route == 1) { // Screen: fine versus coarse/heavy by constituent grain class.
+        // A plain deck catches what is unambiguously coarse. A precision deck also catches the
+        // heavy mineral, so the concentrate leaving the Mesh is richer and the fines carry less
+        // of what the next stage would only have thrown away.
+        const bool precision = has_research("processing.precision_screening");
         ledger.output_material = {FINE_SAND, HEAVY_CONCENTRATE, 0, 0};
         for (const int32_t c : {0, 4, 5}) ledger.pending[0][c] += input[c];
-        for (const int32_t c : {1, 2, 3}) ledger.pending[1][c] += input[c];
+        for (const int32_t c : {1, 3}) ledger.pending[1][c] += input[c];
+        ledger.pending[precision ? 1 : 0][2] += input[2];
     } else if (route == 2) { // Magnetic field moves only magnetic-bearing mass.
         ledger.output_material = {IRON_CONCENTRATE, NONMAGNETIC_CONCENTRATE, 0, 0};
         ledger.pending[0][1] += input[1];
         for (int32_t c = 0; c < CONSTITUENT_COUNT; ++c) if (c != 1) ledger.pending[1][c] += input[c];
     } else if (route == 3) { // Thermal fractionation: every impurity remains accounted.
+        // Concentrate Recovery only applies to something that was already concentrated, which is
+        // what "for physically separated concentrates" means: the heavy fraction of a concentrate
+        // carries metal, and a selective enough reaction pulls it out instead of vitrifying it.
+        const bool recovery = has_research("processing.concentrate_recovery") &&
+            (input_material == IRON_CONCENTRATE || input_material == NONMAGNETIC_CONCENTRATE);
         ledger.output_material = {MOLTEN_GLASS, MOLTEN_IRON, GOLD, CRUDE_RESIDUE};
         ledger.pending[0][0] += input[0]; ledger.pending[1][1] += input[1]; ledger.pending[2][3] += input[3];
-        ledger.pending[3][2] += input[2]; ledger.pending[3][4] += input[4]; ledger.pending[3][5] += input[5];
+        ledger.pending[recovery ? 1 : 3][2] += input[2];
+        ledger.pending[3][4] += input[4]; ledger.pending[3][5] += input[5];
     } else { // Wet density separation.
         ledger.output_material = {HEAVY_CONCENTRATE, FINE_SAND, 0, 0};
         for (const int32_t c : {1, 2, 3}) ledger.pending[0][c] += input[c];
@@ -372,6 +391,25 @@ Dictionary NativeSandWorld::run_variable_composition_fixture(Array gold_numerato
     Dictionary result = ledger_report(ledger);
     result["input_count"] = gold_numerators.size();
     return result;
+}
+
+// What one grain of a given material becomes on a given route, with no world and no gravity.
+//
+// The research that reaches split_into_ledger() changes which channel a constituent lands in,
+// and measuring that through a running world means measuring a sand pile instead: the grain has
+// to still be in the source cell when the component runs, which is a property of the terrain
+// under it. This reports the split itself. tests/build_flow.gd covers the same routes end to
+// end, so the two together say both "the rule is right" and "the rule is reachable".
+Dictionary NativeSandWorld::split_composition_for_test(
+    int32_t material_id, int32_t profile_id, int32_t mineral_signature, int32_t route) const {
+    Dictionary invalid;
+    if (material_id < 0 || material_id > 65535 || profile_id < 0 || profile_id > 65535 ||
+        mineral_signature < 0 || mineral_signature > 65535 || route < 0 || route > 4) return invalid;
+    FractionalMassLedger ledger;
+    ledger.id = 1;
+    split_into_ledger(ledger, composition_for(material_id, profile_id, static_cast<uint16_t>(mineral_signature)),
+                      route, material_id);
+    return ledger_report(ledger);
 }
 
 Dictionary NativeSandWorld::run_global_mass_fixture(int32_t input_count, int32_t profile_id, int32_t mineral_signature) const {
@@ -484,7 +522,20 @@ void NativeSandWorld::process_component_processing() {
     if (component_processing_cells_.empty()) return;
     std::vector<uint64_t> keys(component_processing_cells_.begin(), component_processing_cells_.end());
     std::sort(keys.begin(), keys.end());
+    // Two more research nodes land here rather than on the machines they were written for.
+    //
+    // Radiant Intensity lets Refractory geometry react a second cell in the same tick: the
+    // enclosure scans its four neighbours for the hottest qualifying grain, and with the
+    // research it comes back for the next one instead of waiting a tick. High-Throughput
+    // Handling doubles how much a component may hold while its outputs are blocked, which is
+    // what "feed handling" is worth in a world where the outputs are ordinary cells that
+    // something else has to clear.
+    const int32_t refractory_passes = has_research("furnace.throughput_1") ? 2 : 1;
+    const int64_t ledger_capacity = FULL_CELL_MICRO_MASS * MAX_LEDGER_QUANTA_PER_CHANNEL *
+        (has_research("logistics.high_throughput_handling") ? 2 : 1);
     for (const uint64_t key : keys) {
+      const int32_t passes = get_structure(cell_from_key(key)) == STRUCTURE_REFRACTORY_WALL ? refractory_passes : 1;
+      for (int32_t pass = 0; pass < passes; ++pass) {
         const Vector2i component = cell_from_key(key);
         const int32_t type = get_structure(component);
         int32_t route = -1;
@@ -500,32 +551,32 @@ void NativeSandWorld::process_component_processing() {
                     source = candidate; hottest = get_temperature(candidate);
                 }
             }
-            if (hottest < 0) continue;
+            if (hottest < 0) break;
             outputs = {component + Vector2i(-1, -1), component + Vector2i(1, -1), component + Vector2i(-1, -2), component + Vector2i(1, -2)};
         } else if (type == STRUCTURE_VIBRATION_ACTUATOR) {
             Vector2i mesh = component + Vector2i(1, 0);
             if (get_structure(mesh) != STRUCTURE_MESH_SCREEN) mesh = component + Vector2i(-1, 0);
-            if (get_structure(mesh) != STRUCTURE_MESH_SCREEN) continue;
+            if (get_structure(mesh) != STRUCTURE_MESH_SCREEN) break;
             route = 1; source = mesh + Vector2i(0, -1); outputs = {mesh + Vector2i(0, 1), mesh + Vector2i(1, -1), mesh + Vector2i(0, 2), mesh + Vector2i(2, -1)};
         } else if (type == STRUCTURE_ELECTROMAGNET) {
             route = 2; source = component + Vector2i(0, 1); outputs = {component + Vector2i(-1, 1), component + Vector2i(1, 1), component + Vector2i(-2, 1), component + Vector2i(2, 1)};
         } else if (type == STRUCTURE_RIFFLE) {
             const int32_t nearby_water = get_liquid_mass(component + Vector2i(-1, -1)) + get_liquid_mass(component + Vector2i(0, -1)) + get_liquid_mass(component + Vector2i(1, -1));
-            if (nearby_water < 48) continue;
+            if (nearby_water < 48) break;
             route = 4; source = component + Vector2i(0, -1); outputs = {component + Vector2i(0, -2), component + Vector2i(1, -1), component + Vector2i(-1, -2), component + Vector2i(2, -1)};
-        } else continue;
+        } else break;
         const int32_t material = get_cell(source);
-        if (!(material == RAW_SAND || material == FINE_SAND || material == HEAVY_CONCENTRATE || material == IRON_CONCENTRATE || material == NONMAGNETIC_CONCENTRATE)) continue;
+        if (!(material == RAW_SAND || material == FINE_SAND || material == HEAVY_CONCENTRATE || material == IRON_CONCENTRATE || material == NONMAGNETIC_CONCENTRATE)) break;
         FractionalMassLedger &ledger = fractional_ledgers_[key]; ledger.id = key;
         bool capacity = true;
-        for (const ConstituentMass &pending : ledger.pending) if (channel_total(pending) > FULL_CELL_MICRO_MASS * MAX_LEDGER_QUANTA_PER_CHANNEL) capacity = false;
-        if (!capacity) continue;
-        Chunk *chunk = get_chunk(world_to_chunk(source)); if (chunk == nullptr) continue;
+        for (const ConstituentMass &pending : ledger.pending) if (channel_total(pending) > ledger_capacity) capacity = false;
+        if (!capacity) break;
+        Chunk *chunk = get_chunk(world_to_chunk(source)); if (chunk == nullptr) break;
         const int32_t index = local_index(world_to_local(source));
         const ConstituentMass input = composition_for(material, chunk->provenance[index], chunk->mineral_signature[index]);
         const int32_t temperature = chunk->temperature[index];
         set_material_state(source, EMPTY, 0, TEMPERATURE_AMBIENT, 0, 0);
-        split_into_ledger(ledger, input, route); conservation_input_micro_mass_ += FULL_CELL_MICRO_MASS;
+        split_into_ledger(ledger, input, route, material); conservation_input_micro_mass_ += FULL_CELL_MICRO_MASS;
         record_production_event(material, 1, false);
         if (route == 1) ++total_sieve_processed_;
         else if (route == 2) ++total_magnetic_processed_;
@@ -547,6 +598,7 @@ void NativeSandWorld::process_component_processing() {
                 else if (ledger.output_material[output] == CRUDE_RESIDUE) ++total_residue_;
             }
         }
+      }
     }
 }
 

@@ -1,7 +1,7 @@
 class_name ComponentPresentation
 extends RefCounted
 
-const DEV_TYPES := {5: true, 6: true, 7: true, 17: true, 35: true, 36: true}
+const DEV_TYPES := {5: true, 6: true, 7: true, 17: true, 36: true}
 const DIRECTIONAL_TYPES := {1: true, 2: true, 3: true, 9: true, 12: true, 13: true, 14: true, 15: true, 18: true, 19: true, 20: true, 21: true, 22: true, 23: true, 24: true, 25: true, 27: true, 30: true, 45: true, 46: true, 47: true}
 
 const DETAILS := {
@@ -37,6 +37,7 @@ const DETAILS := {
 	37: {"motif":"stone_blocks", "principle":"Provides ordinary solid structural geometry.", "not_do":"Does not insulate or process by identity.", "ports":[], "related":["concept:construction"]},
 	38: {"motif":"riveted_plate", "principle":"Provides conductive metal geometry for walls and vessels.", "not_do":"Has no hidden vessel inventory.", "ports":[], "related":["material:iron", "concept:heat"]},
 	39: {"motif":"ceramic_tiles", "principle":"Provides lower-conductivity ceramic geometry for walls and vessels.", "not_do":"Has no hidden vessel inventory.", "ports":[], "related":["component:38", "concept:heat"]},
+	35: {"motif":"open_vessel", "principle":"Conducts real heat from below into ordinary world cells held in its cavity.", "not_do":"Has no inventory, recipe or cooking timer.", "ports":["open top", "heated floor"], "related":["material:water", "concept:heat"]},
 	40: {"motif":"furnace_brick", "principle":"Survives high temperature and shapes a physical heated region.", "not_do":"Is not a Furnace machine and performs no recipe.", "ports":[], "related":["component:42", "component:47", "concept:combustion"]},
 	41: {"motif":"perforated_grid", "principle":"Allows sufficiently fine physical material to pass through its aperture.", "not_do":"Does not convert Raw Sand into Fine Sand.", "ports":["retained side", "pass side", "vibration field"], "related":["component:45", "concept:screening", "material:raw_sand"]},
 	42: {"motif":"slotted_grate", "principle":"Supports coarse solids while allowing smaller matter and gases through.", "not_do":"Does not burn fuel or create heat.", "ports":["supported side", "pass side"], "related":["component:40", "concept:combustion"]},

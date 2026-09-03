@@ -721,7 +721,8 @@ func _build_tool_data() -> void:
 	var structures: Dictionary = {}
 	for definition: Dictionary in _world.get_structure_definitions(): structures[int(definition.type_id)] = definition
 	var tools: Array[Dictionary] = [
-		{"kind":"structure", "id":2, "name":"Conveyor", "short":"2", "icon":"conveyor", "category":"Logistics"},
+		{"kind":"structure", "id":2, "name":"Conveyor Right", "short":"2", "icon":"conveyor", "category":"Logistics"},
+		{"kind":"structure", "id":1, "name":"Conveyor Left", "short":"1", "icon":"conveyor", "category":"Logistics"},
 		{"kind":"structure", "id":3, "name":"Funnel", "short":"3", "icon":"funnel", "category":"Logistics"},
 		{"kind":"structure", "id":4, "name":"Storage Bin", "short":"4", "icon":"storage", "category":"Storage"},
 		{"kind":"structure", "id":8, "name":"Research Bank", "short":"8", "icon":"bank", "category":"Infrastructure"},
@@ -742,6 +743,8 @@ func _build_tool_data() -> void:
 		{"kind":"structure", "id":31, "name":"Accumulator", "short":"AC", "icon":"storage", "category":"Power"},
 		{"kind":"structure", "id":33, "name":"Flywheel", "short":"FW", "icon":"conveyor", "category":"Power"},
 		{"kind":"structure", "id":34, "name":"Resistive Heater", "short":"RH", "icon":"furnace", "category":"Power"},
+		{"kind":"structure", "id":9, "name":"Control Gate", "short":"CG", "icon":"wire", "category":"Automation"},
+		{"kind":"structure", "id":35, "name":"Iron Pot", "short":"PT", "icon":"storage", "category":"Thermal"},
 		{"kind":"structure", "id":37, "name":"Structural Wall", "short":"W", "icon":"storage", "category":"Components"},
 		{"kind":"structure", "id":38, "name":"Metal Plate", "short":"MP", "icon":"storage", "category":"Components"},
 		{"kind":"structure", "id":39, "name":"Ceramic Wall", "short":"CW", "icon":"storage", "category":"Components"},

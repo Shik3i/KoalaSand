@@ -8,23 +8,6 @@ None known after the Phase 13.9 verification gate.
 
 ## P1
 
-- **Six research nodes charge for an effect a player cannot receive.** `is_physical_processor()`
-  is true only for the Radiant Crude Furnace, Vibrating Screen, Overbelt Magnetic Separator and
-  Wash Sluice, and all four are `DEV_TYPES` excluded from the Build Catalog. Every research node
-  whose effect reaches only that subsystem is therefore inert in a normal game:
-  `furnace.fuel_economy_1` (1200 Glass / 30 Iron), `furnace.throughput_1` (2200 / 80),
-  `logistics.high_throughput_handling` (3500 / 180), `processing.precision_screening`
-  (4000 / 250 / 1 Gold) and `processing.concentrate_recovery` (6000 / 400 / 2 Gold) -- the most
-  expensive node a player can see. `split_into_ledger()`, which is what the composable geometry
-  actually runs, reads no research at all. A sixth, `thermal.cookware` (900 / 60), gates only the
-  Iron Pot, which is also a dev fixture, so it unlocks nothing placeable.
-  `logistics.high_throughput_handling` and `processing.precision_screening` are additionally
-  prerequisites on the path to `processing.concentrate_recovery`, so the route through the late
-  tree runs through dead nodes. Left for an owner decision because the two repairs are different
-  designs: retire the nodes, or re-point their effects at the composable routes in
-  `split_into_ledger()` and `process_component_processing()`. The wording of every node was
-  corrected in this pass; the economics were not. `tests/build_flow.gd` pins the one text surface
-  that still names a dev fixture so no second one can appear unnoticed.
 - **Release identity is still the owner playtest one:** `config/version` reads
   `0.1.0-playtest.5`, the package is named `KoalaSand-0.1.0-playtest.5-windows-x64`, and
   `README-PLAYTEST.txt` opens with "Owner first-play build" and asks for bug reports without
@@ -56,6 +39,44 @@ None known after the Phase 13.9 verification gate.
 - **Manual playtest coverage:** automated captures and state assertions cannot establish subjective controls, readability, audio balance or fun. The owner checklist remains required.
 
 ## Fixed in the alpha release audit
+
+- **Every belt a player could build ran to the right.** `_place_conveyor_drag()` reads the
+  direction off the selected type -- `-1 if build_structure_type == 1 else 1` -- and the Build
+  Catalog offered a single entry called "Conveyor", type 2. Conveyor Left was not selectable by
+  any means: not by rotating, not by dragging leftwards, not from the catalog. It is listed now,
+  and `tests/build_flow.gd` builds one of each and watches a grain travel the correct way along
+  both.
+- **The Build Catalog is a hand-written list that had drifted from the structure table.** Nothing
+  connected `factory_hud.gd` to `get_structure_definitions()`, so a Component could be defined,
+  gated by its own research node, and never offered. Three were: the Iron Pot, the Control Gate
+  -- whose research node costs 4200 Glass, 220 Iron and 1 Gold and promises to unlock it -- and
+  Conveyor Left. `tests/build_flow.gd` now asserts that every structure `is_player_facing()`
+  accepts appears in the catalog.
+
+- **Six research nodes charged Glass, Iron and Gold for an effect a player could never
+  receive.** `is_physical_processor()` is true only for the Radiant Crude Furnace, Vibrating
+  Screen, Overbelt Magnetic Separator and Wash Sluice, and `COMPOSABLE_PROCESSING.md` retired all
+  four to dev fixtures excluded from the Build Catalog. Every upgrade in the processing branch
+  still pointed at them, including `processing.concentrate_recovery` at 6000 Glass, 400 Iron and
+  2 Gold -- the most expensive node a player can see -- and two of the dead nodes were
+  prerequisites on the path to it. `split_into_ledger()`, which is what the composable geometry
+  runs, read no research at all. Each node now lands on the route that does the work its own
+  description names, using the definitions the game already had:
+
+  | Node | Now does |
+  | --- | --- |
+  | `processing.precision_screening` | A Mesh Screen sends the heavy mineral to the concentrate instead of letting it dilute the fines -- the same distinction `PROCESS_SIEVE_PRECISION` always drew against `PROCESS_SIEVE` |
+  | `processing.concentrate_recovery` | The thermal route recovers a concentrate's heavy fraction as Iron rather than residue, and only for material that was actually concentrated first -- the distinction `PROCESS_FURNACE_RECOVERY` drew against `PROCESS_FURNACE_RAW` |
+  | `logistics.high_throughput_handling` | A Processing Component buffers twice as much while its outputs are blocked |
+  | `furnace.throughput_1` | Refractory geometry reacts a second cell in the same tick |
+  | `furnace.fuel_economy_1` | Thermal Insulators stop conducting heat across themselves. Their conductivity of 2 was already at the floor of the structure bridge, so stopping the bridge is the only reduction left |
+  | `thermal.cookware` | Unlocks the Iron Pot, which is now in the catalog. It is an implemented, documented vessel (`PHYSICAL_COOKING.md`) that was sitting in `DEV_TYPES`, which is what made the node unlock nothing placeable |
+
+  `tests/research_effects.gd` runs each scenario twice against the same seed and the same cells,
+  once without the research and once with, and asserts the numbers move -- a test of only the
+  researched run would pass just as well if the effect were unconditional. It also asserts that
+  Concentrate Recovery leaves unconcentrated Raw Sand alone, and that the two splitting upgrades
+  move mass between channels without creating or destroying any.
 
 - **An exception inside the simulation took the whole process down silently.** C++ that throws
   through a GDExtension boundary calls `std::terminate`: no engine error, no line in

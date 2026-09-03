@@ -58,6 +58,7 @@ public:
     int64_t harvest_stroke(Vector2i from_cell, Vector2i to_cell, int32_t radius);
     int32_t get_hidden_constituent(int32_t profile_id, int32_t mineral_signature) const;
     int32_t process_material_for_test(int32_t material_id, int32_t profile_id, int32_t mineral_signature, int32_t process_id) const;
+    Dictionary split_composition_for_test(int32_t material_id, int32_t profile_id, int32_t mineral_signature, int32_t route) const;
     int64_t fill_rect(Rect2i area, int32_t material_id, int32_t spacing = 1);
     int32_t allocate_chunk_rect(Rect2i chunk_area);
     void finalize_initialization();
@@ -1641,7 +1642,8 @@ private:
     ConstituentMass composition_for(int32_t material_id, int32_t profile_id, uint16_t signature) const;
     static int64_t composition_total(const ConstituentMass &composition);
     static ConstituentMass take_quantum(ConstituentMass &source, int64_t quantum);
-    void split_into_ledger(FractionalMassLedger &ledger, const ConstituentMass &input, int32_t route) const;
+    void split_into_ledger(FractionalMassLedger &ledger, const ConstituentMass &input, int32_t route,
+                           int32_t input_material = 0) const;
     Dictionary ledger_report(const FractionalMassLedger &ledger) const;
     void update_milestones();
     static const StructurePhysicalProperties &structure_physical_properties(int32_t type_id);

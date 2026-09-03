@@ -22,6 +22,7 @@ constexpr int32_t SMOKE = 24;
 constexpr int32_t RAW_FOOD = 25;
 constexpr int32_t COOKED_FOOD = 26;
 constexpr int32_t BURNT_FOOD = 27;
+constexpr int32_t STRUCTURE_THERMAL_INSULATOR = 44;
 constexpr uint8_t PHASE_HEATING = 1u << 1;
 constexpr uint8_t PHASE_COOLING = 1u << 2;
 constexpr uint8_t PHASE_MASK = PHASE_HEATING | PHASE_COOLING;
@@ -560,10 +561,18 @@ void NativeSandWorld::process_thermal_structures() {
     }
     std::vector<uint64_t> component_keys(thermal_component_cells_.begin(), thermal_component_cells_.end());
     std::sort(component_keys.begin(), component_keys.end());
+    // Thermal Efficiency lands here. Every one of these structures bridges heat across itself
+    // between its two opposite neighbours, which is how a hot enclosure leaks into the ground and
+    // the air around it. The Insulator already sits at the floor of that coefficient -- its
+    // conductivity is 2, and 2/16 rounds to the minimum of 1 -- so the only remaining way to
+    // reduce the loss is to stop the bridge. The researched Insulator does not conduct across
+    // itself; the cells on either side still exchange heat with everything else normally.
+    const bool insulation_upgraded = has_research("furnace.fuel_economy_1");
     for (const uint64_t key : component_keys) {
         const Vector2i wall = cell_from_key(key);
         const int32_t type_id = get_structure(wall);
         if (type_id < 37 || type_id > 44) continue;
+        if (type_id == STRUCTURE_THERMAL_INSULATOR && insulation_upgraded) continue;
         const StructurePhysicalProperties &properties = structure_physical_properties(type_id);
         const int32_t coefficient = std::max(1, properties.conductivity / 16);
         transfer_between(wall + Vector2i(-1, 0), wall + Vector2i(1, 0), coefficient);
