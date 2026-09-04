@@ -232,7 +232,77 @@ wrong, not the geology. It now samples per pixel.
 
 ---
 
-## 6. What a stranger sees that the owner does not
+## 6. The performance and physics gate
+
+Measured, not reasoned about. The question was where a frame goes on a world that has been
+played in for a while, so the probe was an **idle** world: chunks resident, nothing active, no
+matter moving.
+
+| Resident chunks | Cost of one idle tick |
+| ---: | ---: |
+| 16 | 0.029 ms |
+| 400 | 1.11 ms |
+| 900 | 2.39 ms |
+| 1600 | 4.16 ms |
+
+Linear at about `2.6 us` per chunk per tick, for a world in which nothing is happening. It
+matters because `evict_pristine_outside()` only evicts chunks that are **pristine**: anything the
+player has dug, built in or spilled on stays resident for the rest of the session. Residency
+therefore grows with everywhere they have been, and this cost grows with it -- slowly, over an
+hour, which is exactly the shape of problem a benchmark never catches and a playthrough always
+does.
+
+Three things came out of it.
+
+**The chunk order was rebuilt about ten times a tick.** `step()` and its subsystems walk every
+resident chunk to build the active list, merge `next_active`, release liquid planes and run
+thermal, and each walk allocated a vector and sorted the whole map to arrive at the same order.
+The order only changes when a chunk is created, evicted or the world is cleared, so it is cached
+and those three places invalidate it.
+
+**One of those walks was quadratic.** Collecting fluid-active chunks asked `std::find` whether
+each candidate was already in the movement list -- a linear scan of a list that grows with the
+world. `active_chunks` had just been built from exactly the chunks whose activity bitmap is
+valid, so `!chunk->active.valid()` is the same question, asked in constant time.
+
+**And `get_statistics()` was being called every frame.** It walks every resident chunk itself and
+then merges the fluid, generation, structure, pipe and wet-processing dictionaries, several of
+which walk the map again. On a 1600-chunk world **one call measures 5.50 ms**. It was called by
+the renderer every frame for two pixel counters, by the status line every frame for a panel that
+is hidden, by the audio mixer for one movement count, by the alert manager for the tick, and --
+worst -- by `_submit_brush_batch()` on **every brush stroke**, which is the exact path the
+frame-rate collapse was originally reported on.
+
+`get_tick()` costs `0.033 us` and `get_frame_counters()` costs `1.17 us`. Both exist now, the
+callers that only wanted a number use them, and the status line assembles the full picture below
+its own early return instead of above it.
+
+What the benchmarks say, against the same suite run before the change:
+
+| Dense Megafactory, 50k active belts | Before | After |
+| --- | ---: | ---: |
+| `avg_sim_ms` | 13.346 | **12.293** |
+| `worst_sim_ms` | 27.669 | **24.937** |
+| `avg_logistics_ms` | 9.737 | **8.930** |
+| `hash` | `549667b4` | `549667b4` |
+
+The identical hash is the point. The simulation is bit-for-bit what it was; it just costs less.
+Brush drag worst-case frames improved too -- `13.09` to `11.32 ms` at 40 cells a frame, `11.11`
+to `8.94` at 80 -- while the means did not move, which is what removing an occasional expensive
+call rather than a per-frame one looks like.
+
+**What is left, and why I stopped.** The idle tick is still linear at ~2.6 us per chunk: about
+ten full walks of the chunk map remain, and removing them means iterating a maintained set of
+chunks that have something to do rather than all of them. Four of those walks also clear
+`next_active` as they go, and `next_active` is set by wake-ups that can reach a chunk outside any
+list built earlier in the tick. Getting that wrong drops a wake-up, which is the failure that
+produced the dead Conveyor two sessions ago and is invisible until a belt silently stops. That is
+a change to make with a fresh head and its own test, not one to land the evening before a
+release.
+
+---
+
+## 7. What a stranger sees that the owner does not
 
 **The build shipped the default Godot icon** -- taskbar, window and executable. A public download
 that looks like an untitled Godot project reads as unfinished before it opens. There is now an
@@ -249,7 +319,7 @@ now 1280x720.
 
 ---
 
-## 7. What was verified rather than assumed
+## 8. What was verified rather than assumed
 
 - **The release package builds and runs.** `scripts/package_playtest.ps1` produced a 39.5 MB
   archive. Launched from the package directory with an isolated profile, the exported build
@@ -265,7 +335,7 @@ now 1280x720.
 
 ---
 
-## 8. Left for an owner decision
+## 9. Left for an owner decision
 
 - **Release identity.** `config/version` still reads `0.1.0-playtest.5`, the package is named
   after it, and `README-PLAYTEST.txt` opens with "Owner first-play build". It also asks for bug
@@ -291,12 +361,13 @@ now 1280x720.
 
 ---
 
-## 9. Gates
+## 10. Gates
 
 | Gate | Result |
 | --- | --- |
 | `scripts/test.ps1` | `TEST_SUITE_PASS scripts=37` |
 | `scripts/benchmark.ps1` | `BENCHMARK_SUITE_PASS scripts=30` |
+| Megafactory state hash | `549667b4`, unchanged across the optimisation |
 | `tests/build_flow.gd` | 184 checks |
 | `tests/fault_guard.gd` | 21 checks |
 | `tests/research_effects.gd` | 21 checks |

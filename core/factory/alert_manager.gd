@@ -25,7 +25,9 @@ var _last_emitted_tick: Dictionary = {}
 func observe(world: Variant, visible_chunks: Rect2i) -> void:
 	if world == null:
 		return
-	var tick := int(world.get_statistics().get("tick", 0))
+	# get_tick(), not the full diagnostic assembly: this observes on a frame cadence, and
+	# get_statistics() walks every resident chunk several times over to reach one integer.
+	var tick := int(world.get_tick())
 	var pipe: Dictionary = world.get_pipe_statistics()
 	var bank: Dictionary = world.get_bank_statistics()
 	var visible_issues := _scan_visible_pipe_issues(world, visible_chunks)

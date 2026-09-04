@@ -389,7 +389,7 @@ func _process(delta: float) -> void:
 			_runtime_phase9_gas_ms.append(float(phase9_gas.get("gas_usec", 0)) / 1000.0)
 			_runtime_phase9_fluid_ms.append(float(phase9_fluid.get("fluid_usec", 0)) / 1000.0)
 			_runtime_phase9_pipe_ms.append(float(phase9_pipe.get("pipe_usec", 0)) / 1000.0)
-		if _phase85_thermal_load and int(world.get_statistics().get("tick", 0)) % 2 == 0:
+		if _phase85_thermal_load and int(world.get_tick()) % 2 == 0:
 			var thermal: Dictionary = world.step_thermal_candidate(2)
 			if _runtime_benchmark_started:
 				_runtime_thermal_total_ms += float(thermal.get("thermal_usec", 0)) / 1000.0
@@ -858,7 +858,9 @@ func _stroke_points(from_cell: Vector2i, to_cell: Vector2i) -> Array[Vector2i]:
 func _submit_brush_batch(entries: Array) -> bool:
 	if entries.is_empty() or world == null:
 		return false
-	var tick := int(world.get_statistics().get("tick", 0))
+	# get_tick() rather than get_statistics(): this runs on every brush stroke, and the full
+	# statistics dictionary walks every resident chunk to answer a question about one integer.
+	var tick := int(world.get_tick())
 	var sequence := Time.get_ticks_usec()
 	var batch := CommandBatch.new("brush:%d" % sequence, 0, sequence, "Brush stroke", CommandBatch.ValidationMode.BEST_EFFORT)
 	for entry: Array in entries:
@@ -1323,7 +1325,7 @@ func _focus_world_cell(world_cell: Vector2i) -> void:
 
 
 func _submit_world_command(type: int, payload: Dictionary) -> bool:
-	var tick := int(world.get_statistics().get("tick", 0)) if world != null else 0
+	var tick := int(world.get_tick()) if world != null else 0
 	var sequence := Time.get_ticks_usec()
 	var forward := CommandBatch.new("action:%d" % sequence, 0, sequence, "Construction action", CommandBatch.ValidationMode.ATOMIC)
 	var forward_payload := payload.duplicate(true)
@@ -2640,7 +2642,7 @@ func _update_phase135_feedback() -> void:
 		{"event":"water", "position":center, "intensity":clampf(float(fluid.get("transfers", fluid.get("fluid_cells_moved", 0))) / 2000.0, 0.0, 1.0), "category":"Environment"},
 		{"event":"steam", "position":center, "intensity":clampf(float(gas.get("transfers", 0)) / 1000.0, 0.0, 1.0), "category":"Environment"},
 		{"event":"fire", "position":center, "intensity":clampf(float(organic.get("reactive_cells", 0)) / 128.0, 0.0, 1.0), "category":"Environment"},
-		{"event":"sand", "position":center, "intensity":clampf(float(world.get_statistics().get("cells_moved", 0)) / 3000.0, 0.0, 1.0), "category":"Environment"},
+		{"event":"sand", "position":center, "intensity":clampf(float(world.get_frame_counters().get("cells_moved", 0)) / 3000.0, 0.0, 1.0), "category":"Environment"},
 	]
 	_audio_mixer.update_aggregated_loops(sources, center, camera.zoom.x)
 	var authoritative := {"wet_then_dry_events":wet.get("dried_grains", 0), "heavy_captured":wet.get("heavy_captured", 0), "charcoal_produced":organic.get("charcoal_produced", 0), "vessel_steam_generated":gas.get("steam_generated", 0), "vessel_material_comparisons":machine.get("vessel_material_comparisons", 0), "oxygen_starved_events":organic.get("oxygen_starved", organic.get("oxygen_limited_cells", 0)), "pipe_steam_mass":pipe.get("steam_mass", 0), "modified_furnace_temperature_gain":physical.get("improved_furnace_temperature_gain", 0)}
@@ -3713,7 +3715,7 @@ func _build_dense_automation_benchmark() -> void:
 
 
 func _maintain_progression_bank_feeds() -> void:
-	var tick := int(world.get_statistics().get("tick", 0))
+	var tick := int(world.get_tick())
 	for index in _benchmark_bank_origins.size():
 		var origin := _benchmark_bank_origins[index]
 		var input := origin + Vector2i(3, -1)
@@ -3831,7 +3833,6 @@ func _copy_seed() -> void:
 func _update_status() -> void:
 	if world == null:
 		return
-	var statistics: Dictionary = world.get_statistics()
 	var speed_text := "PAUSED" if clock.speed_multiplier == 0 else "%d×" % clock.speed_multiplier
 	var cursor := _mouse_world_cell()
 	if absi(cursor.x) > 100000 or absi(cursor.y) > 100000:
@@ -3869,6 +3870,11 @@ func _update_status() -> void:
 	# world changed, for a panel nobody was looking at.
 	if not diagnostics_panel.visible:
 		return
+
+	# Assembled here and nowhere earlier. get_statistics() walks every resident chunk and then
+	# merges five more dictionaries that walk it again -- 5.70 ms on a 1600-chunk world -- and
+	# every value below it is read by this panel alone.
+	var statistics: Dictionary = world.get_statistics()
 
 	var diagnostics_text := (
 		"SIMULATION\n"
@@ -4161,7 +4167,7 @@ func _parse_capture_arguments() -> void:
 func _maybe_queue_capture() -> void:
 	if _capture_path.is_empty() or _capture_queued or world == null:
 		return
-	if int(world.get_statistics().get("tick", 0)) < _capture_tick:
+	if int(world.get_tick()) < _capture_tick:
 		return
 	_capture_queued = true
 	call_deferred("_capture_runtime_frame")
@@ -4355,7 +4361,7 @@ func _maybe_start_runtime_benchmark() -> void:
 	if Engine.get_process_frames() < warmup_frames:
 		return
 	_runtime_benchmark_started = true
-	_runtime_benchmark_start_tick = int(world.get_statistics().get("tick", 0))
+	_runtime_benchmark_start_tick = int(world.get_tick())
 	_runtime_benchmark_start_usec = Time.get_ticks_usec()
 	_runtime_benchmark_frames = 0
 	_runtime_benchmark_delta_seconds = 0.0

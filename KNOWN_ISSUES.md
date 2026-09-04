@@ -49,6 +49,15 @@ None known after the Phase 13.9 verification gate.
   memory-bandwidth bound and moves with host state; earlier runs on the same build measured
   `7.52`-`7.68 ms`. Deliberately not relaxed: either the fluid pass earns real headroom or the
   gate is restated as a distribution rather than a single average, and both are owner calls.
+- **An idle tick costs about `2.6 us` per resident chunk**, and `evict_pristine_outside()` only
+  evicts chunks the player never touched, so residency grows with everywhere they have been. A
+  settled 1600-chunk world spends `4.16 ms` a tick on bookkeeping for a world in which nothing is
+  happening. About ten full walks of the chunk map remain in `step()`; removing them means
+  iterating a maintained set of chunks that have work rather than all of them. Four of those
+  walks also clear `next_active` as they go, and `next_active` is set by wake-ups that can reach
+  a chunk outside any list built earlier in the tick -- getting that wrong drops a wake-up, which
+  is the failure that produced the dead Conveyor in the first-run pass and is invisible until a
+  belt silently stops. Deliberately deferred: it needs its own test before it needs a patch.
 - **The presentation layer has had no review.** Six screenshots of the real UI produced four
   defects, all of them listed below as fixed. That hit rate is the finding: the simulation is
   covered by 37 test scripts and 30 benchmarks, and what a player actually looks at is covered by
@@ -57,6 +66,21 @@ None known after the Phase 13.9 verification gate.
 - **Manual playtest coverage:** automated captures and state assertions cannot establish subjective controls, readability, audio balance or fun. The owner checklist remains required.
 
 ## Fixed in the alpha release audit
+
+- **`get_statistics()` was on three per-frame paths and on every brush stroke.** It walks every
+  resident chunk and then merges five dictionaries that walk it again; on a 1600-chunk world one
+  call measures `5.50 ms`. The renderer called it every frame for two pixel counters, the status
+  line called it every frame for a panel that is hidden, the audio mixer for one movement count,
+  the alert manager for the tick, and `_submit_brush_batch()` on every brush stroke -- the exact
+  path the frame-rate collapse was reported on. `get_tick()` (`0.033 us`) and
+  `get_frame_counters()` (`1.17 us`) now serve the callers that only wanted a number.
+- **The chunk order was rebuilt about ten times a tick, and one of those walks was quadratic.**
+  Every walk allocated a vector and sorted the whole chunk map to reach the same order, and
+  collecting fluid-active chunks asked `std::find` whether each candidate was already in the
+  movement list. The order is cached and invalidated at the three places that create, evict or
+  clear chunks; the membership question is answered by the chunk's own activity bitmap. The
+  dense Megafactory benchmark went from `13.346` to `12.293 ms` average and `27.669` to
+  `24.937 ms` worst, with an unchanged state hash of `549667b4`.
 
 - **The Processing tab of the Build Catalog was empty in every world, in every mode.**
   `_canonical_category()` tested `"component"` before `"processing"`, so every "Processing

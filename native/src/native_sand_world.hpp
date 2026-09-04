@@ -63,6 +63,8 @@ public:
     int32_t allocate_chunk_rect(Rect2i chunk_area);
     void finalize_initialization();
     int32_t step();
+    int64_t get_tick() const;
+    Dictionary get_frame_counters() const;
     bool is_faulted() const;
     String get_fault_message() const;
     void inject_step_fault_for_test();
@@ -1243,8 +1245,20 @@ private:
     Chunk *get_chunk(Vector2i coordinate);
     const Chunk *get_chunk(Vector2i coordinate) const;
     Chunk *get_or_create_chunk(Vector2i coordinate);
+    // Deterministic chunk order, kept rather than rebuilt.
+    //
+    // step() and its subsystems walk every resident chunk about ten times a tick -- building the
+    // active list, merging next_active, releasing liquid planes, running thermal -- and each of
+    // those walks used to allocate a vector and sort the whole map. On a settled world with 400
+    // resident chunks and nothing active at all, that was 1.11 ms a tick spent arriving at the
+    // same order ten times over. The order only changes when a chunk is created, evicted or the
+    // world is cleared, so it is cached and those three places invalidate it.
     std::vector<Chunk *> sorted_chunks();
     std::vector<const Chunk *> sorted_chunks() const;
+    void invalidate_chunk_order();
+    const std::vector<Chunk *> &chunk_order() const;
+    mutable std::vector<Chunk *> chunk_order_;
+    mutable bool chunk_order_dirty_ = true;
 
     struct MatterJobResult {
         int64_t active = 0;

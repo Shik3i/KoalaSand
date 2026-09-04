@@ -53,9 +53,11 @@ func render_dirty_chunks(chunk_area: Rect2i = Rect2i()) -> void:
 		else:
 			_render_native_chunks(_world.consume_dirty_render_chunks())
 		_render_native_water_page(chunk_area)
-		var statistics: Dictionary = _world.get_statistics()
-		last_dirty_pixels = statistics.get("dirty_render_pixels", 0)
-		last_upload_pixels = statistics.get("render_upload_pixels", 0)
+		# Two counters, not the whole diagnostic picture: get_statistics() walks every resident
+		# chunk and merges five dictionaries that walk it again, and this runs every frame.
+		var counters: Dictionary = _world.get_frame_counters()
+		last_dirty_pixels = counters.get("dirty_render_pixels", 0)
+		last_upload_pixels = counters.get("render_upload_pixels", 0)
 		last_update_ms = float(Time.get_ticks_usec() - start_usec) / 1000.0
 		return
 	for chunk in _world.get_dirty_chunks():
