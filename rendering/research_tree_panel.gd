@@ -145,18 +145,61 @@ func _draw_node(definition: Dictionary, font: Font) -> void:
 	draw_circle(icon_center, 10.0 * _zoom, Color(border, 0.24))
 	draw_arc(icon_center, 7.0 * _zoom, 0.0, TAU, 16, border, maxf(1.0, 2.0 * _zoom))
 	draw_line(icon_center - Vector2(4, 0) * _zoom, icon_center + Vector2(4, 0) * _zoom, border, maxf(1.0, 2.0 * _zoom))
-	var scale_font := maxi(9, roundi(14.0 * _zoom))
-	var state_text := "UNLOCKED" if unlocked else "AVAILABLE" if available else "PREREQUISITE"
-	draw_string(font, rect.position + Vector2(10, 19) * _zoom, state_text, HORIZONTAL_ALIGNMENT_LEFT, -1, maxi(8, roundi(10.0 * _zoom)), Color("7fd2b1") if unlocked else Color("f0b54c") if available else Color("738487"))
-	draw_string(font, rect.position + Vector2(10, 43) * _zoom, definition.display_name, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 20.0 * _zoom, scale_font, Color("edf0e8"))
+	# Row positions used to be fixed offsets multiplied by the zoom while every font size had a
+	# floor of eight or nine pixels. Below about 0.7 zoom -- and the tree opens fitted, which on a
+	# tree this wide is the 0.34 minimum -- the rows kept moving together while the glyphs stopped
+	# shrinking, so the cost line and the two effect lines were drawn on top of each other. It was
+	# survivable while every effect was one short line; it stopped being survivable the moment any
+	# of them wrapped.
+	#
+	# A card fitted to the panel is roughly 37 pixels tall and cannot hold four rows of legible
+	# text, so the rows are ranked rather than truncated from the bottom. The name comes first,
+	# then what the node costs, then what it unlocks. The state label is last of all: the border
+	# and fill already carry it, and the legend above the tree says so.
+	var state_font := maxi(8, roundi(10.0 * _zoom))
+	var title_font := maxi(9, roundi(14.0 * _zoom))
+	var cost_font := maxi(8, roundi(11.0 * _zoom))
+	var effect_font := maxi(8, roundi(10.0 * _zoom))
 	var costs: Dictionary = definition.costs
 	var cost_text := "Glass %d   Iron %d" % [costs.glass, costs.iron]
 	if int(costs.gold) > 0:
 		cost_text += "   Gold %d" % costs.gold
-	draw_string(font, rect.position + Vector2(10, 67) * _zoom, cost_text, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 20.0 * _zoom, maxi(8, roundi(11.0 * _zoom)), Color("b9c5c3"))
-	var effect_lines := _wrap_words(str(definition.effect), 31)
+	# Wrap against the card's real width rather than a fixed character count, so a long effect
+	# neither spills past the border at high zoom nor wraps needlessly at low zoom.
+	var width := rect.size.x - 20.0 * _zoom
+	var effect_columns := maxi(12, int(width / maxf(1.0, effect_font * 0.52)))
+	var effect_lines := _wrap_words(str(definition.effect), effect_columns)
+
+	var state_text := "UNLOCKED" if unlocked else "AVAILABLE" if available else "PREREQUISITE"
+	var state_color := Color("7fd2b1") if unlocked else Color("f0b54c") if available else Color("738487")
+	var ranked: Array = [
+		[definition.display_name, title_font, Color("edf0e8"), 24.0],
+		[cost_text, cost_font, Color("b9c5c3"), 24.0],
+	]
 	for line_index in mini(2, effect_lines.size()):
-		draw_string(font, rect.position + Vector2(10, 88 + line_index * 15) * _zoom, effect_lines[line_index], HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 20.0 * _zoom, maxi(8, roundi(10.0 * _zoom)), Color("d59d4a"))
+		ranked.append([effect_lines[line_index], effect_font, Color("d59d4a"), 15.0])
+	ranked.append([state_text, state_font, state_color, 19.0])
+
+	# Keep rows from the front of the ranking until the card runs out of height, then put the
+	# state label back on top where it has always been drawn.
+	var available_height := rect.size.y - 6.0
+	var used := 0.0
+	var kept: Array = []
+	for row: Array in ranked:
+		var step: float = maxf(float(row[3]) * _zoom, float(row[1]) + 3.0)
+		if used + step > available_height: continue
+		used += step
+		kept.append(row)
+	var state_index := kept.find(ranked[ranked.size() - 1])
+	if state_index > 0:
+		kept.remove_at(state_index)
+		kept.insert(0, ranked[ranked.size() - 1])
+
+	var cursor := 0.0
+	var left := rect.position + Vector2(10.0 * _zoom, 0.0)
+	for row: Array in kept:
+		cursor += maxf(float(row[3]) * _zoom, float(row[1]) + 3.0)
+		draw_string(font, left + Vector2(0, cursor), str(row[0]), HORIZONTAL_ALIGNMENT_LEFT, width, int(row[1]), row[2])
 
 func _wrap_words(text: String, max_chars: int) -> Array[String]:
 	var lines: Array[String] = []

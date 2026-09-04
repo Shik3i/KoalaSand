@@ -10,35 +10,39 @@ const LEGACY_STEP_IDS := {
 	"BUILD":"BUILD_COMPONENT",
 	"PAUSE_OR_SPEED":"PLANNING_PAUSE",
 }
+# Each step carries the words the guided arrow says out loud. They used to be derived from the
+# step id -- "CHARACTER_INTRO" prettified to "Character Intro" -- so the first thing the game
+# ever pointed at labelled itself with an internal identifier instead of telling the player what
+# to do.
 const STEPS := {
 	GameModeCapabilities.Preset.FACTORY: [
-		{"id":"FACTORY_INTRO", "target":"catalog", "text":"Factory Mode: plan and build anywhere. Research remains active. {catalog} opens Components."},
-		{"id":"MOVE_CAMERA", "target":"status", "text":"Move the camera with middle-drag or the movement keys; use the wheel to zoom."},
-		{"id":"OPEN_CATALOG", "target":"catalog", "text":"Open the Build Catalog with {catalog}; locked entries explain their Research requirement."},
-		{"id":"BUILD_COMPONENT", "target":"quickbar", "text":"Choose a Component, then place it in the world. Matter never enters a hidden inventory."},
-		{"id":"PLANNING_PAUSE", "target":"planning_pause", "text":"Use {planning_pause} to freeze physics while you inspect and build."},
-		{"id":"INSPECT", "target":"info", "text":"Use {info_mode}, then select a cell or Component to see live state and blockers."},
-		{"id":"RESEARCH", "target":"research", "text":"Open Research with {open_research}; deposit eligible physical outputs in a Research Bank."},
-		{"id":"BLUEPRINT", "target":"blueprints", "text":"Blueprints copy ordinary layouts; they never add hidden processing behavior."},
+		{"id":"FACTORY_INTRO", "target":"catalog", "label":"Start here", "text":"Factory Mode: plan and build anywhere. Research remains active. {catalog} opens Components."},
+		{"id":"MOVE_CAMERA", "target":"status", "label":"Move the camera", "text":"Move the camera with middle-drag or the movement keys; use the wheel to zoom."},
+		{"id":"OPEN_CATALOG", "target":"catalog", "label":"Open Catalog", "text":"Open the Build Catalog with {catalog}; locked entries explain their Research requirement."},
+		{"id":"BUILD_COMPONENT", "target":"quickbar", "label":"Pick and place", "text":"Choose a Component, then place it in the world. Matter never enters a hidden inventory."},
+		{"id":"PLANNING_PAUSE", "target":"planning_pause", "label":"Freeze physics", "text":"Use {planning_pause} to freeze physics while you inspect and build."},
+		{"id":"INSPECT", "target":"info", "label":"Inspect a cell", "text":"Use {info_mode}, then select a cell or Component to see live state and blockers."},
+		{"id":"RESEARCH", "target":"research", "label":"Open Research", "text":"Open Research with {open_research}; deposit eligible physical outputs in a Research Bank."},
+		{"id":"BLUEPRINT", "target":"blueprints", "label":"Save a layout", "text":"Blueprints copy ordinary layouts; they never add hidden processing behavior."},
 	],
 	GameModeCapabilities.Preset.CHARACTER: [
-		{"id":"CHARACTER_INTRO", "target":"status", "text":"You are the koala. Move with {move_left}/{move_right}, jump with {jump}; the camera follows you."},
-		{"id":"JETPACK", "target":"status", "text":"Hold {jetpack} for the Basic Jetpack. Fuel and movement remain physical."},
-		{"id":"DIG", "target":"dig", "text":"Use {character_cut} beside terrain. Excavated matter stays in the world."},
-		{"id":"OPEN_CATALOG", "target":"catalog", "text":"Open the Build Catalog with {catalog}; Character Mode enforces visibility and build range."},
-		{"id":"BUILD_COMPONENT", "target":"quickbar", "text":"Place a Component inside the visible build range."},
-		{"id":"INSPECT", "target":"info", "text":"Use {info_mode} to inspect live physical state and understand a blockage."},
-		{"id":"RESEARCH", "target":"research", "text":"Research still requires real processed matter deposited in a Research Bank."},
-		{"id":"BLUEPRINT", "target":"blueprints", "text":"Blueprints copy visible ordinary Components; placement still obeys range and Research."},
-		{"id":"PLANNING_PAUSE", "target":"planning_pause", "text":"Use {planning_pause} to plan safely without advancing physics."},
-		{"id":"SPRINT_HOVER", "target":"controls", "text":"Open Controls to see the current Sprint and Hover bindings."},
+		{"id":"CHARACTER_INTRO", "target":"status", "label":"Move and jump", "text":"You are the koala. Move with {move_left}/{move_right}, jump with {jump}; the camera follows you."},
+		{"id":"JETPACK", "target":"status", "label":"Hold to fly", "text":"Hold {jetpack} for the Basic Jetpack. Fuel and movement remain physical."},
+		{"id":"DIG", "target":"dig", "label":"Dig here", "text":"Use {character_cut} beside terrain. Excavated matter stays in the world."},
+		{"id":"OPEN_CATALOG", "target":"catalog", "label":"Open Catalog", "text":"Open the Build Catalog with {catalog}; Character Mode enforces visibility and build range."},
+		{"id":"BUILD_COMPONENT", "target":"quickbar", "label":"Pick and place", "text":"Place a Component inside the visible build range."},
+		{"id":"INSPECT", "target":"info", "label":"Inspect a cell", "text":"Use {info_mode} to inspect live physical state and understand a blockage."},
+		{"id":"RESEARCH", "target":"research", "label":"Open Research", "text":"Research still requires real processed matter deposited in a Research Bank."},
+		{"id":"BLUEPRINT", "target":"blueprints", "label":"Save a layout", "text":"Blueprints copy visible ordinary Components; placement still obeys range and Research."},
+		{"id":"PLANNING_PAUSE", "target":"planning_pause", "label":"Freeze physics", "text":"Use {planning_pause} to plan safely without advancing physics."},
+		{"id":"SPRINT_HOVER", "target":"controls", "label":"See the bindings", "text":"Open Controls to see the current Sprint and Hover bindings."},
 	],
 	GameModeCapabilities.Preset.CREATIVE: [
-		{"id":"CREATIVE_INTRO", "target":"catalog", "text":"Creative removes progression friction, not physical simulation."},
-		{"id":"OPEN_CATALOG", "target":"catalog", "text":"Open {catalog} to choose materials and Components."},
-		{"id":"PAINT_OR_ERASE", "target":"quickbar", "text":"Paint or erase matter directly; placed matter still flows, burns and exchanges heat."},
-		{"id":"BUILD_COMPONENT", "target":"quickbar", "text":"Place Components freely and observe their ordinary physical interactions."},
-		{"id":"PLANNING_PAUSE", "target":"planning_pause", "text":"Use {planning_pause} or the speed controls when comparing a setup."},
+		{"id":"CREATIVE_INTRO", "target":"catalog", "label":"Start here", "text":"Creative removes progression friction, not physical simulation."},
+		{"id":"OPEN_CATALOG", "target":"catalog", "label":"Open Catalog", "text":"Open {catalog} to choose materials and Components."},
+		{"id":"PAINT_OR_ERASE", "target":"quickbar", "label":"Paint matter", "text":"Paint or erase matter directly; placed matter still flows, burns and exchanges heat."},
+		{"id":"BUILD_COMPONENT", "target":"quickbar", "label":"Pick and place", "text":"Place Components freely and observe their ordinary physical interactions."},
+		{"id":"PLANNING_PAUSE", "target":"planning_pause", "label":"Freeze physics", "text":"Use {planning_pause} or the speed controls when comparing a setup."},
 	],
 }
 

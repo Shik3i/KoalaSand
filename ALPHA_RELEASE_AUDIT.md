@@ -190,7 +190,49 @@ of the twelve resolution and scale combinations it covers.
 
 ---
 
-## 5. What a stranger sees that the owner does not
+## 5. What looking at it found
+
+Everything above came from reading code and running tests. None of it involved looking at the
+game. Six screenshots of the real UI produced four more defects, which is the honest measure of
+how much of the presentation layer had been reviewed: none of it.
+
+**The Processing tab of the Build Catalog was empty.** `_canonical_category()` sorts a Component
+into a tab by testing substrings in order, and it tested `"component"` before `"processing"`.
+Every entry the catalog called a "Processing Component" -- Mesh Screen, Grate, Riffle, Vibration
+Actuator, Electromagnet, Blower -- matched the first test and filed under Structures. Nothing
+else in the catalog contained the word "processing", so the tab was empty in every world, in
+every mode, from the first launch. A player following the objective to a Mesh Screen and
+reaching for the obvious tab was told "No Components match this search."
+
+**The research cards were drawing their text on top of itself.** Row positions were fixed offsets
+multiplied by the zoom, while every font size had a floor of eight or nine pixels. Below about
+0.7 zoom -- and the tree opens fitted, which on a tree this wide is the 0.34 minimum -- the rows
+kept moving together while the glyphs stopped shrinking. It was survivable while every effect
+was one short line. Section 3 above rewrote those effects, some of them now wrap, and the cards
+turned to mush. Rows are now ranked rather than truncated from the bottom: name, then cost, then
+what it unlocks, and the state label last, because the border colour already carries it.
+
+**The first thing the game points at was clipped.** `GuidedHighlightLayer` sized its label box at
+eight pixels per character and then drew the text at font size 14, so `draw_string()` clipped to
+the box it had been handed. The tutorial arrow pointing at the Build button read "Open Catal".
+
+**And it labelled itself with an identifier.** The same label came from prettifying the step id,
+so the first thing a Character Mode player was shown said "Character Intro". Every onboarding
+step now carries the words the arrow says, and `tests/build_flow.gd` asserts none of them is a
+raw identifier again.
+
+A fifth thing looked like a defect and was not, which is worth recording because the check is the
+interesting part. The world preview on the New World screen showed a ruler-straight vertical
+contact through every stratum -- exactly the artefact `WORLD_GENERATION_V5.md` says the province
+dither exists to prevent. Probing the actual world at five depths found the transitions at
+different x at every depth, so the world was fine. `v5_fill_column()` samples the province once,
+at one y, because in the world it is called per chunk and the next chunk down probes again; the
+preview solves a column once and draws two hundred cells of depth from it. The portrait was
+wrong, not the geology. It now samples per pixel.
+
+---
+
+## 6. What a stranger sees that the owner does not
 
 **The build shipped the default Godot icon** -- taskbar, window and executable. A public download
 that looks like an untitled Godot project reads as unfinished before it opens. There is now an
@@ -207,7 +249,7 @@ now 1280x720.
 
 ---
 
-## 6. What was verified rather than assumed
+## 7. What was verified rather than assumed
 
 - **The release package builds and runs.** `scripts/package_playtest.ps1` produced a 39.5 MB
   archive. Launched from the package directory with an isolated profile, the exported build
@@ -223,7 +265,7 @@ now 1280x720.
 
 ---
 
-## 7. Left for an owner decision
+## 8. Left for an owner decision
 
 - **Release identity.** `config/version` still reads `0.1.0-playtest.5`, the package is named
   after it, and `README-PLAYTEST.txt` opens with "Owner first-play build". It also asks for bug
@@ -236,19 +278,26 @@ now 1280x720.
   the package.
 - **`PLAYTEST_CHECKLIST.md` ships inside the package.** An internal checklist in a public
   download.
+- **The character avatar is a placeholder** -- a grey circle, a green rectangle and two stick
+  legs -- and it is what a Character Mode player looks at for the whole session.
+- **Component icons repeat.** Storage Bin, Reservoir Wall, Structural Wall, Iron Pot and Thermal
+  Insulator all draw the same rectangle glyph, so the catalog is read by name rather than by
+  shape.
+- **Research node names truncate** at the zoom the tree opens at: "Ferrous Separati",
+  "High-Throughpu", "Concentrate Rec". The footer shows the full name once a node is selected.
 - The three P1s carried from earlier passes: Factory Mode offering brushes its capability table
   forbids, four Experiments that can never complete, and the `benchmark_phase95` gate sitting on
   its own boundary.
 
 ---
 
-## 8. Gates
+## 9. Gates
 
 | Gate | Result |
 | --- | --- |
 | `scripts/test.ps1` | `TEST_SUITE_PASS scripts=37` |
 | `scripts/benchmark.ps1` | `BENCHMARK_SUITE_PASS scripts=30` |
-| `tests/build_flow.gd` | 105 checks |
+| `tests/build_flow.gd` | 184 checks |
 | `tests/fault_guard.gd` | 21 checks |
 | `tests/research_effects.gd` | 21 checks |
 | `scripts/package_playtest.ps1` | archive produced, exported build launches |
@@ -265,8 +314,13 @@ the property that was broken:
 | 80 cells/frame | 6.88 ms | 10.36 ms | 10.82 ms | 145 fps |
 | 160 cells/frame | 6.90 ms | 8.97 ms | 10.68 ms | 145 fps |
 
-The `benchmark_phase95` gate that fails roughly one run in three passed this time. That does not
-make it a sound gate; see KNOWN_ISSUES.md.
+The benchmark suite is not a dependable gate once it has been running for a few minutes. Two
+consecutive full runs failed Phase 9, Phase 9.5 and Phase 11 -- all timing gates on large
+workloads, all late in the run. Phase 11 measured `5.09` and `3.53 ms` against a `< 3.0` gate on
+identical work; run on its own straight afterwards it measured `2.16`, `2.15` and `2.30 ms`,
+three times, and three earlier full-suite runs the same day had passed it at `2.06`-`2.13 ms`.
+Nothing in the simulation changed between them. The suite measures a hotter machine as it goes
+and several gates sit close enough to flip; see KNOWN_ISSUES.md.
 
 Manual playtest coverage remains required and cannot be replaced by any of this: controls,
 readability, audio balance and whether the first hour is worth anyone's time are not measurable

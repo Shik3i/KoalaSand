@@ -1052,7 +1052,18 @@ Dictionary NativeSandWorld::get_macro_preview(int32_t width, int32_t height) con
                         for (int32_t offset = 0; offset < column.bed_stored; ++offset) {
                             if (world_y < column.bed_y[offset]) { bed = column.bed_first + offset; break; }
                         }
-                        rock = v5_bed_rock_at(column.province, bed, world_y);
+                        // The province has to be sampled at this pixel's own depth, not taken
+                        // from the column. v5_fill_column() probes it once, at one y, because in
+                        // the world it is called per chunk and the next chunk down probes again.
+                        // The preview solves a column once and then draws two hundred cells of
+                        // depth from it, so reusing column.province made every province contact a
+                        // ruler-straight vertical wall running the full height of the postcard --
+                        // exactly the artefact WORLD_GENERATION_V5.md says the dither exists to
+                        // prevent, on the first image a player ever sees. The world itself is
+                        // fine; only its portrait was wrong.
+                        const int32_t pixel_province = geology_province_at_v5(
+                            (x - width / 2) * V5_PREVIEW_STEP_X, world_y);
+                        rock = v5_bed_rock_at(pixel_province, bed, world_y);
                     }
                     float rgb[3];
                     if (depth_cells < column.sand_depth) {

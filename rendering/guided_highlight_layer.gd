@@ -1,6 +1,9 @@
 class_name GuidedHighlightLayer
 extends Control
 
+const MAX_LABEL_WIDTH := 320.0
+const MIN_LABEL_FONT_SIZE := 10
+
 var reduced_motion := false
 var _target: Control
 var _message := ""
@@ -92,12 +95,24 @@ func _draw() -> void:
 	var arrow_direction := -1.0 if arrow_left else 1.0
 	draw_colored_polygon(PackedVector2Array([arrow_tip, arrow_tip + Vector2(12.0 * arrow_direction, -8), arrow_tip + Vector2(12.0 * arrow_direction, 8)]), KoalaSandTheme.COLOR_ACCENT_BRIGHT)
 	if not _message.is_empty():
-		var label_size := Vector2(minf(280.0, maxf(96.0, float(_message.length()) * 8.0)), 28.0)
+		# The box used to guess its width at eight pixels a character while the text was drawn at
+		# font size 14, which is wider than that for most glyphs. draw_string() then clipped to
+		# the box it had been given, so the very first thing the game points at read "Open Catal".
+		# Ask the font how wide the string is instead, and shrink the type rather than the words
+		# when the answer does not fit.
+		var font := ThemeDB.fallback_font
+		var font_size := 14
+		var text_width := font.get_string_size(_message, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
+		while text_width + 16.0 > MAX_LABEL_WIDTH and font_size > MIN_LABEL_FONT_SIZE:
+			font_size -= 1
+			text_width = font.get_string_size(_message, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
+		var label_size := Vector2(clampf(text_width + 16.0, 96.0, MAX_LABEL_WIDTH), 28.0)
 		var label_rect := UILayoutPolicy.best_tooltip_rect(rect, label_size, viewport, _safe_regions)
 		_label_rect = label_rect
 		var box := StyleBoxFlat.new(); box.bg_color = Color("0b1217ed"); box.border_color = KoalaSandTheme.COLOR_ACCENT_BRIGHT; box.set_border_width_all(1); box.set_corner_radius_all(4)
 		draw_style_box(box, label_rect)
-		draw_string(ThemeDB.fallback_font, label_rect.position + Vector2(8, 19), _message, HORIZONTAL_ALIGNMENT_LEFT, label_rect.size.x - 16.0, 14, KoalaSandTheme.COLOR_ACCENT_BRIGHT)
+		var baseline := label_rect.position + Vector2(8.0, (label_rect.size.y + font.get_ascent(font_size) - font.get_descent(font_size)) * 0.5)
+		draw_string(font, baseline, _message, HORIZONTAL_ALIGNMENT_LEFT, label_rect.size.x - 16.0, font_size, KoalaSandTheme.COLOR_ACCENT_BRIGHT)
 
 
 func _outline_box() -> StyleBoxFlat:

@@ -745,17 +745,17 @@ func _build_tool_data() -> void:
 		{"kind":"structure", "id":34, "name":"Resistive Heater", "short":"RH", "icon":"furnace", "category":"Power"},
 		{"kind":"structure", "id":9, "name":"Control Gate", "short":"CG", "icon":"wire", "category":"Automation"},
 		{"kind":"structure", "id":35, "name":"Iron Pot", "short":"PT", "icon":"storage", "category":"Thermal"},
-		{"kind":"structure", "id":37, "name":"Structural Wall", "short":"W", "icon":"storage", "category":"Components"},
-		{"kind":"structure", "id":38, "name":"Metal Plate", "short":"MP", "icon":"storage", "category":"Components"},
-		{"kind":"structure", "id":39, "name":"Ceramic Wall", "short":"CW", "icon":"storage", "category":"Components"},
-		{"kind":"structure", "id":40, "name":"Refractory Wall", "short":"RW", "icon":"furnace", "category":"Components"},
-		{"kind":"structure", "id":41, "name":"Mesh Screen", "short":"MS", "icon":"screen", "category":"Components"},
-		{"kind":"structure", "id":42, "name":"Grate", "short":"GR", "icon":"screen", "category":"Components"},
-		{"kind":"structure", "id":43, "name":"Riffle", "short":"RF", "icon":"screen", "category":"Components"},
-		{"kind":"structure", "id":44, "name":"Thermal Insulator", "short":"TI", "icon":"storage", "category":"Components"},
-		{"kind":"structure", "id":45, "name":"Vibration Actuator", "short":"VA", "icon":"screen", "category":"Components"},
-		{"kind":"structure", "id":46, "name":"Electromagnet", "short":"EM", "icon":"magnet", "category":"Components"},
-		{"kind":"structure", "id":47, "name":"Blower", "short":"BL", "icon":"furnace", "category":"Components"},
+		{"kind":"structure", "id":37, "name":"Structural Wall", "short":"W", "icon":"storage", "category":"Construction"},
+		{"kind":"structure", "id":38, "name":"Metal Plate", "short":"MP", "icon":"storage", "category":"Construction"},
+		{"kind":"structure", "id":39, "name":"Ceramic Wall", "short":"CW", "icon":"storage", "category":"Construction"},
+		{"kind":"structure", "id":40, "name":"Refractory Wall", "short":"RW", "icon":"furnace", "category":"Construction"},
+		{"kind":"structure", "id":41, "name":"Mesh Screen", "short":"MS", "icon":"screen", "category":"Processing Component"},
+		{"kind":"structure", "id":42, "name":"Grate", "short":"GR", "icon":"screen", "category":"Processing Component"},
+		{"kind":"structure", "id":43, "name":"Riffle", "short":"RF", "icon":"screen", "category":"Processing Component"},
+		{"kind":"structure", "id":44, "name":"Thermal Insulator", "short":"TI", "icon":"storage", "category":"Construction"},
+		{"kind":"structure", "id":45, "name":"Vibration Actuator", "short":"VA", "icon":"screen", "category":"Processing Component"},
+		{"kind":"structure", "id":46, "name":"Electromagnet", "short":"EM", "icon":"magnet", "category":"Processing Component"},
+		{"kind":"structure", "id":47, "name":"Blower", "short":"BL", "icon":"furnace", "category":"Processing Component"},
 		{"kind":"subsurface", "id":0, "depth":0, "name":"Subsurface Channel I", "short":"I", "icon":"conveyor", "category":"Subsurface Logistics"},
 		{"kind":"subsurface", "id":1, "depth":1, "name":"Subsurface Channel II", "short":"II", "icon":"conveyor", "category":"Subsurface Logistics"},
 		{"kind":"subsurface", "id":2, "depth":2, "name":"Subsurface Channel III", "short":"III", "icon":"conveyor", "category":"Subsurface Logistics"},
@@ -877,14 +877,20 @@ func _tool_key(tool: Dictionary) -> String:
 	if tool.is_empty(): return ""
 	return "%s:%d" % [str(tool.get("kind", "")), int(tool.get("id", -1))]
 
+# The order of these tests is the whole function. "Processing Component" contains both words,
+# and the component test used to run first, so every Mesh Screen, Riffle, Electromagnet and
+# Blower filed itself under Structures and the Processing tab of the Build Catalog was empty --
+# a player looking for the thing the objective had just named them found "No Components match
+# this search". Nothing else in the catalog carried the word "processing" either, so the tab was
+# empty for every world, in every mode, from the first launch.
 func _canonical_category(tool: Dictionary) -> String:
 	var source := str(tool.get("category", "")).to_lower()
 	if "automation" in source: return "AUTOMATION"
 	if "fluid" in source or "pipe" in source: return "FLUIDS"
+	if "processing" in source: return "PROCESSING"
 	if "thermal" in source or "organic" in source: return "THERMAL"
 	if "power" in source: return "POWER"
-	if "component" in source or "infrastructure" in source: return "STRUCTURES"
-	if "processing" in source: return "PROCESSING"
+	if "construction" in source or "component" in source or "infrastructure" in source: return "STRUCTURES"
 	return "LOGISTICS"
 
 func _activate_slot_node(page: int, index: int) -> void:
@@ -1011,7 +1017,8 @@ func _refresh_onboarding() -> void:
 		return
 	var target := _help_targets.get(_onboarding.current_target()) as Control
 	if _onboarding_hint.visible and is_instance_valid(target):
-		var step_label := str(_onboarding.current_step().get("id", "Try this")).replace("_", " ").capitalize()
+		var step: Dictionary = _onboarding.current_step()
+		var step_label := str(step.get("label", str(step.get("id", "Try this")).replace("_", " ").capitalize()))
 		_highlight_layer.show_step(target, step_label)
 	else:
 		_highlight_layer.clear()

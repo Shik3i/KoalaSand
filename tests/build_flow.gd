@@ -70,6 +70,8 @@ func _run(scene: Node) -> void:
 	_test_no_promise_names_a_machine_the_catalog_does_not_have(scene)
 	_test_the_catalog_offers_every_component_that_is_meant_to_be_offered(scene)
 	_test_a_belt_can_be_built_in_both_directions(scene)
+	_test_every_catalog_category_shows_something(scene)
+	_test_the_guided_arrow_says_something_a_player_can_act_on(scene)
 	if failures.is_empty():
 		print("PASS: %d build flow checks" % checks)
 		quit(0)
@@ -624,3 +626,46 @@ func _test_a_belt_can_be_built_in_both_directions(scene: Node) -> void:
 
 	_check(int(moved[1]) > 0, "matter on a right-hand belt travels right (%d cells)" % int(moved[1]))
 	_check(int(moved[-1]) > 0, "matter on a left-hand belt travels left (%d cells)" % int(moved[-1]))
+
+
+func _test_every_catalog_category_shows_something(scene: Node) -> void:
+	# The Build Catalog has eight filter tabs. _canonical_category() decides which one a Component
+	# lands in by testing substrings in order, and "Processing Component" contains both
+	# "component" and "processing" -- with the component test first, every Mesh Screen, Riffle,
+	# Vibration Actuator, Electromagnet and Blower filed under Structures. Nothing else in the
+	# catalog carried the word "processing", so the Processing tab was empty in every world, in
+	# every mode, from the first launch: a player following the objective to a Mesh Screen and
+	# reaching for the obvious tab was told "No Components match this search".
+	var hud: Variant = scene.get("factory_hud")
+	var populated := {}
+	for tool: Dictionary in hud.get_meta("catalog_tools", []):
+		var category: String = str(hud.call("_canonical_category", tool))
+		populated[category] = int(populated.get(category, 0)) + 1
+
+	for category in ["LOGISTICS", "PROCESSING", "FLUIDS", "THERMAL", "POWER", "AUTOMATION", "STRUCTURES"]:
+		_check(int(populated.get(category, 0)) > 0,
+			"the %s tab of the Build Catalog is not empty" % category)
+
+	# And the tab holds the Components the objectives send the player to find.
+	var processing := {}
+	for tool: Dictionary in hud.get_meta("catalog_tools", []):
+		if str(hud.call("_canonical_category", tool)) == "PROCESSING": processing[str(tool.get("name", ""))] = true
+	for name in ["Mesh Screen", "Vibration Actuator", "Riffle"]:
+		_check(processing.has(name), "the Processing tab holds the %s the objectives name" % name)
+
+
+func _test_the_guided_arrow_says_something_a_player_can_act_on(_scene: Node) -> void:
+	# The guided highlight labelled itself from the step id, so the very first thing the game
+	# pointed at in Character Mode read "Character Intro" -- an internal identifier, not an
+	# instruction. Every step now carries the words the arrow says.
+	for preset: int in OnboardingState.STEPS:
+		for step: Dictionary in OnboardingState.STEPS[preset]:
+			var id := str(step.get("id", ""))
+			var label := str(step.get("label", ""))
+			_check(not label.is_empty(), "step %s has a label for the guided arrow" % id)
+			# Not "differs from the id": OPEN_CATALOG prettifies to "Open Catalog", which is a
+			# perfectly good instruction, and a check that failed it would be measuring the
+			# wrong thing. What must never come back is a raw identifier.
+			_check(not "_" in label and label != label.to_upper(),
+				"step %s is not labelled with an identifier (%s)" % [id, label])
+			_check(label.length() <= 20, "step %s label stays short enough to draw (%s)" % [id, label])

@@ -29,6 +29,19 @@ None known after the Phase 13.9 verification gate.
   are read by `ExperimentTracker` and published by nothing. Each needs a decision about what the
   simulation should measure; see [FIRST_RUN_PASS.md](FIRST_RUN_PASS.md). The gap is pinned by
   `tests/build_flow.gd` so it cannot grow.
+- **The benchmark suite fails by position, not by code.** Running the whole suite twice in a row
+  produced `FAIL` for Phase 9 (1M active thermal), Phase 9.5 (1M Steam) and Phase 11 (character
+  FOV) -- all timing gates on large workloads, all late in the run. Phase 11 measured
+  `open_avg 5.09` and `3.53 ms` against a `< 3.0` gate and a p99 of `16.99` and `30.97 ms`
+  against `< 5.0`, on identical work (`sampled=16241` in every run). Run on its own immediately
+  afterwards, the same script measured `2.16`, `2.15` and `2.30 ms` average and `2.64`, `2.58`
+  and `2.85 ms` p99, three times in a row, comfortably inside both gates -- and three earlier
+  full-suite runs the same day had passed it at `2.06`-`2.13 ms`. Nothing in the simulation
+  changed between the passing and failing runs; only UI drawing code did. So the suite's later
+  scripts are measuring a hotter or busier machine than its earlier ones, and several gates sit
+  close enough to flip. Deliberately not relaxed: the fix is either a cooldown between scripts, a
+  gate stated as a distribution, or accepting that the suite is advisory after the first few
+  minutes. All three are owner calls.
 - **The 1M-Steam benchmark gate sits on its own boundary:** `benchmark_phase95.gd` asserts the
   eight-worker average is `<= 8.0 ms`, and three consecutive runs on the Phase 13.9 host measured
   `7.79`, `7.92` and `8.00 ms`. It therefore fails roughly one run in three, which makes
@@ -36,9 +49,39 @@ None known after the Phase 13.9 verification gate.
   memory-bandwidth bound and moves with host state; earlier runs on the same build measured
   `7.52`-`7.68 ms`. Deliberately not relaxed: either the fluid pass earns real headroom or the
   gate is restated as a distribution rather than a single average, and both are owner calls.
+- **The presentation layer has had no review.** Six screenshots of the real UI produced four
+  defects, all of them listed below as fixed. That hit rate is the finding: the simulation is
+  covered by 37 test scripts and 30 benchmarks, and what a player actually looks at is covered by
+  nobody. Known and unfixed: the character avatar is a placeholder, several Components share one
+  rectangle icon, and research node names truncate at the zoom the tree opens at.
 - **Manual playtest coverage:** automated captures and state assertions cannot establish subjective controls, readability, audio balance or fun. The owner checklist remains required.
 
 ## Fixed in the alpha release audit
+
+- **The Processing tab of the Build Catalog was empty in every world, in every mode.**
+  `_canonical_category()` tested `"component"` before `"processing"`, so every "Processing
+  Component" filed under Structures and nothing was left carrying the word. A player following
+  the objective to a Mesh Screen and reaching for the obvious tab read "No Components match this
+  search". `tests/build_flow.gd` now asserts every tab is non-empty and that the Processing tab
+  holds the Components the objectives name.
+- **Research cards drew their text on top of itself.** Row positions were fixed offsets scaled by
+  the zoom while every font size had a floor of eight or nine pixels, so below about 0.7 zoom --
+  and the tree opens fitted, at the 0.34 minimum -- the rows collided. Correcting the research
+  effect wording made several of them wrap, which turned a latent defect into an unreadable
+  panel. Rows are now ranked: name, cost, effect, and the state label last, since the border
+  colour already carries it.
+- **The tutorial arrow was clipped and labelled with an identifier.** `GuidedHighlightLayer`
+  sized its box at eight pixels per character and drew at font size 14, so the first thing the
+  game points at read "Open Catal"; and the label came from prettifying the step id, so Character
+  Mode opened by pointing at "Character Intro". The box now measures the string, and every
+  onboarding step carries the words the arrow says.
+- **The world preview drew geology the world does not have.** `v5_fill_column()` probes the
+  geological province once, at one y, because in the world it is called per chunk. The New World
+  preview solves a column once and draws two hundred cells of depth from it, so every province
+  contact became a ruler-straight vertical wall -- the exact artefact `WORLD_GENERATION_V5.md`
+  says the dither exists to prevent, on the first image a player sees. Probing the real world at
+  five depths confirmed the geology was fine; only its portrait was wrong. The preview now
+  samples the province per pixel.
 
 - **Every belt a player could build ran to the right.** `_place_conveyor_drag()` reads the
   direction off the selected type -- `-1 if build_structure_type == 1 else 1` -- and the Build
