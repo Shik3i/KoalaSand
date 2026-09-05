@@ -646,8 +646,30 @@ void NativeSandWorld::process_reactions() {
     std::vector<uint64_t> keys(reactive_cells_.begin(), reactive_cells_.end());
     std::sort(keys.begin(), keys.end());
     reactive_cells_.clear();
+    // Which chunks have room for ash or smoke.
+    //
+    // This was built for every resident chunk, every tick. The inner loop stops at the first
+    // cell with room -- instant for open air, and all 4096 cells before giving up on solid rock,
+    // which is most of an explored world. Only pristine chunks are ever evicted, so residency
+    // grows with everywhere the player has been, and on a settled 1600-chunk world this cost
+    // 4.40 ms of a 4.42 ms tick: the entire cost of a tick in which nothing was happening.
+    //
+    // It hid because process_organic_physics() reports under cluster_usec, reaction_usec and
+    // atmosphere_usec rather than an organic_usec, so a probe asking for the obvious key gets
+    // zero and the phase reads as free.
+    //
+    // The map is only ever consulted below for chunk_key(chunk->coordinate) -- the chunk holding
+    // the cell that is reacting. Building it for exactly those chunks gives the same answer for
+    // every lookup that happens, and does no work at all for the ones that never do. When
+    // nothing is reacting, nothing is built.
     std::unordered_set<uint64_t> product_capacity_chunks;
-    for (const Chunk *candidate_chunk : sorted_chunks()) {
+    std::unordered_set<uint64_t> examined_chunks;
+    for (const uint64_t key : keys) {
+        const Vector2i chunk_coordinate = world_to_chunk(cell_from_key(key));
+        const uint64_t candidate_key = chunk_key(chunk_coordinate);
+        if (!examined_chunks.insert(candidate_key).second) continue;
+        const Chunk *candidate_chunk = get_chunk(chunk_coordinate);
+        if (candidate_chunk == nullptr) continue;
         bool has_capacity = false;
         for (int32_t candidate_index = 0; candidate_index < CELLS_PER_CHUNK; ++candidate_index) {
             const int32_t candidate_material = candidate_chunk->material[candidate_index];
@@ -657,7 +679,7 @@ void NativeSandWorld::process_reactions() {
                 break;
             }
         }
-        if (has_capacity) product_capacity_chunks.insert(chunk_key(candidate_chunk->coordinate));
+        if (has_capacity) product_capacity_chunks.insert(candidate_key);
     }
     for (const uint64_t key : keys) {
         const Vector2i cell = cell_from_key(key);

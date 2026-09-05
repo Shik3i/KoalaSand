@@ -4468,12 +4468,21 @@ Dictionary NativeSandWorld::consume_dirty_render_page(Rect2i chunk_area, bool fo
     if (chunk_area.size.x <= 0 || chunk_area.size.y <= 0 ||
         static_cast<int64_t>(chunk_area.size.x) * chunk_area.size.y > 4096) return result;
 
+    // Ask the visible area which chunks it contains, rather than asking every resident chunk
+    // whether it is visible. This runs once a frame, and the area is the camera's -- capped at
+    // 4096 chunks above and a few hundred in practice -- while the resident set grows with
+    // everywhere the player has ever been, because only pristine chunks are ever evicted. The
+    // walk order is unchanged: sorted_chunks() is ordered by y then x, and so is this.
     render_jobs_.clear();
-    for (Chunk *chunk : sorted_chunks()) {
-        if (!chunk_area.has_point(chunk->coordinate) || !chunk->render_dirty.valid()) continue;
-        const Bounds dirty = chunk->render_dirty;
-        render_jobs_.push_back({chunk, dirty});
-        last_dirty_render_pixels_ += dirty.area();
+    const Vector2i area_end = chunk_area.position + chunk_area.size;
+    for (int32_t chunk_y = chunk_area.position.y; chunk_y < area_end.y; ++chunk_y) {
+        for (int32_t chunk_x = chunk_area.position.x; chunk_x < area_end.x; ++chunk_x) {
+            Chunk *chunk = get_chunk({chunk_x, chunk_y});
+            if (chunk == nullptr || !chunk->render_dirty.valid()) continue;
+            const Bounds dirty = chunk->render_dirty;
+            render_jobs_.push_back({chunk, dirty});
+            last_dirty_render_pixels_ += dirty.area();
+        }
     }
     if (render_jobs_.empty() && !force) return result;
     rebuild_render_jobs();

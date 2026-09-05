@@ -291,14 +291,66 @@ Brush drag worst-case frames improved too -- `13.09` to `11.32 ms` at 40 cells a
 to `8.94` at 80 -- while the means did not move, which is what removing an occasional expensive
 call rather than a per-frame one looks like.
 
-**What is left, and why I stopped.** The idle tick is still linear at ~2.6 us per chunk: about
-ten full walks of the chunk map remain, and removing them means iterating a maintained set of
-chunks that have something to do rather than all of them. Four of those walks also clear
-`next_active` as they go, and `next_active` is set by wake-ups that can reach a chunk outside any
-list built earlier in the tick. Getting that wrong drops a wake-up, which is the failure that
-produced the dead Conveyor two sessions ago and is invisible until a belt silently stops. That is
-a change to make with a fresh head and its own test, not one to land the evening before a
-release.
+### The walks were not the cost, and the fix for them was worse than the problem
+
+The plan was to stop walking every chunk. That work was built, tested and then **removed**,
+because measuring it said the walks had never been the problem and the machinery cost more than
+it saved.
+
+The set of chunks a tick needs to visit was made maintained rather than derived, guarded by a
+verifier that re-derived the truth after every tick and by `tests/live_chunks.gd`, which attacked
+the argument it rests on with falling matter, a belt carrying sideways, boiling water, a
+subsurface channel and a player's edits between ticks -- 612 checks. Writing that harness first
+earned its keep before the optimisation landed: it found that a tick has several phases and each
+pushes activity one chunk further, so one halo per tick was not enough, and that an allocated
+liquid-mass plane is not activity and had been pinning every chunk water ever touched.
+
+Full walks per tick went from about ten to `2.13`. **The idle tick did not move**: `4164 us`
+before, `4274 us` after.
+
+Then, once the real cost below was fixed, the trade could be measured properly -- five runs each,
+same host, same session, the only difference being one line that bypassed the set:
+
+| | Idle, 1600 chunks | Dense Megafactory, median of 5 |
+| --- | ---: | ---: |
+| Live set | 6.35 us | 14.47 ms |
+| Bypassed | 21.44 us | **13.93 ms** |
+
+It saved 15 microseconds on a world where nothing happens and cost half a millisecond on a world
+with fifty thousand running belts. That is the wrong direction by a factor of thirty-six, in a
+factory game, so it is gone -- along with its halo, its fixpoint, its parallel-phase guard, its
+verifier and its test. What survives is the profiling it forced.
+
+### `process_reactions()` scanned the whole world every tick to answer nothing
+
+`process_organic_physics()` reports its time under `cluster_usec`, `reaction_usec` and
+`atmosphere_usec`. There is no `organic_usec`, so a probe asking for the obvious key gets zero and
+the phase reads as free. It was not. Of a `4417 us` idle tick, every instrumented phase together
+accounted for `17 us`; bisecting the remainder landed on `process_reactions()`, at `4400 us`.
+
+It opened by building a map of which chunks have room to receive ash or smoke:
+
+```cpp
+for (const Chunk *candidate_chunk : sorted_chunks()) {
+    bool has_capacity = false;
+    for (int32_t candidate_index = 0; candidate_index < CELLS_PER_CHUNK; ++candidate_index) { ... }
+}
+```
+
+Every resident chunk, every tick. The inner loop stops at the first cell with room -- instant for
+open air, and all 4096 cells before giving up on solid rock, which is most of an explored world.
+And the map is only ever read for one key: the chunk holding the cell that is reacting. It is
+built for exactly those chunks now, which is the same answer for every lookup that happens and no
+work at all for the ones that never happen. When nothing is reacting, nothing is built.
+
+| Resident chunks | Idle tick before | After |
+| ---: | ---: | ---: |
+| 400 | 1.11 ms | **8.85 us** |
+| 900 | 2.39 ms | **13.52 us** |
+| 1600 | 4.16 ms | **24.55 us** |
+
+170x at the largest size, and the dense Megafactory measured `13.494`, `13.870` and `13.501 ms`
+against a `549667b4` state hash that has not changed through any of this.
 
 ---
 

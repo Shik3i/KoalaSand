@@ -49,15 +49,13 @@ None known after the Phase 13.9 verification gate.
   memory-bandwidth bound and moves with host state; earlier runs on the same build measured
   `7.52`-`7.68 ms`. Deliberately not relaxed: either the fluid pass earns real headroom or the
   gate is restated as a distribution rather than a single average, and both are owner calls.
-- **An idle tick costs about `2.6 us` per resident chunk**, and `evict_pristine_outside()` only
-  evicts chunks the player never touched, so residency grows with everywhere they have been. A
-  settled 1600-chunk world spends `4.16 ms` a tick on bookkeeping for a world in which nothing is
-  happening. About ten full walks of the chunk map remain in `step()`; removing them means
-  iterating a maintained set of chunks that have work rather than all of them. Four of those
-  walks also clear `next_active` as they go, and `next_active` is set by wake-ups that can reach
-  a chunk outside any list built earlier in the tick -- getting that wrong drops a wake-up, which
-  is the failure that produced the dead Conveyor in the first-run pass and is invisible until a
-  belt silently stops. Deliberately deferred: it needs its own test before it needs a patch.
+- **A maintained live-chunk set was built for this and then removed.** Visiting only the chunks
+  with work reduced full walks per tick from about ten to `2.13` and changed the idle tick by
+  nothing at all, because the walks were never the cost. Measured like for like afterwards, five
+  runs each, it saved `15 us` on an idle world and cost `0.54 ms` on the dense Megafactory --
+  the wrong direction by a factor of thirty-six for a factory game. The machinery is gone. If
+  the remaining `24.55 us` ever matters, the lesson is in the audit: profile first, and expect
+  the answer to be somewhere other than where the shape of the code suggests.
 - **The presentation layer has had no review.** Six screenshots of the real UI produced four
   defects, all of them listed below as fixed. That hit rate is the finding: the simulation is
   covered by 37 test scripts and 30 benchmarks, and what a player actually looks at is covered by
@@ -67,6 +65,15 @@ None known after the Phase 13.9 verification gate.
 
 ## Fixed in the alpha release audit
 
+- **`process_reactions()` scanned every resident chunk, every tick, to answer a question nothing
+  asked.** It built a map of which chunks have room for ash or smoke by scanning cells until it
+  found one with capacity -- instant for open air, all 4096 cells before giving up on solid rock,
+  which is most of an explored world. The map is only ever read for the chunk holding the cell
+  that is reacting. On a settled 1600-chunk world it cost `4400 us` of a `4417 us` tick, and
+  because `process_organic_physics()` reports under `cluster_usec`, `reaction_usec` and
+  `atmosphere_usec` rather than an `organic_usec`, a probe asking for the obvious key got zero
+  and the phase looked free. An idle tick went from `4.16 ms` to `6.35 us` at 1600 chunks, and is
+  now `24.55 us`, and the dense Megafactory is unchanged at a `549667b4` state hash.
 - **`get_statistics()` was on three per-frame paths and on every brush stroke.** It walks every
   resident chunk and then merges five dictionaries that walk it again; on a 1600-chunk world one
   call measures `5.50 ms`. The renderer called it every frame for two pixel counters, the status
